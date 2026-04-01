@@ -1,0 +1,16 @@
+.root {
+    /* Ép ảnh nền phủ kín, không lặp lại, không để lại khoảng trắng */
+    -fx-background-image: url("../images/hometheme.jpg");
+    -fx-background-repeat: no-repeat;
+    -fx-background-size: cover;
+    -fx-background-position: center center;
+
+    /* Ép font cho toàn bộ ứng dụng */
+    -fx-font-family: 'Press Start 2P';
+}
+
+/* Riêng cho ô nhập liệu */
+.text-field {
+    -fx-font-family: 'Press Start 2P';
+    -fx-font-size: 12px;
+}

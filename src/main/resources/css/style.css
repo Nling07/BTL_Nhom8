@@ -1,0 +1,20 @@
+/* Áp dụng cho toàn bộ TextField */
+.text-field {
+    -fx-font-family: 'Press Start 2P';
+    -fx-font-size: 12px; /* Font này khá to, 12px là vừa đẹp cho ô nhập */
+    -fx-text-fill: #333333; /* Màu chữ khi gõ */
+    -fx-highlight-fill: #555555; /* Màu nền khi bôi đen chữ */
+    -fx-highlight-text-fill: white;
+}
+
+/* Ép font cho cả phần chữ gợi ý (Prompt Text) */
+.text-field .text {
+    -fx-font-family: 'Press Start 2P';
+}
+
+/* Nếu bạn muốn khi click vào ô (focus) nó có hiệu ứng pixel */
+.text-field:focused {
+    -fx-border-color: #7851a9; /* Ví dụ màu tím huyền bí hợp với ảnh Poké */
+    -fx-border-width: 2px;
+    -fx-background-color: white;
+}

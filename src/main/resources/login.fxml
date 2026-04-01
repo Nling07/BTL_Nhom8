@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.PasswordField?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.image.Image?>
+<?import javafx.scene.image.ImageView?>
+<?import javafx.scene.layout.AnchorPane?>
+<?import javafx.scene.text.Font?>
+
+<AnchorPane layoutX="1.0" maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="532.0" prefWidth="899.0" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.btl.n8.Controller.loginController">
+   <children>
+      <ImageView fitHeight="532.0" fitWidth="904.0" layoutX="-4.0" mouseTransparent="true" pickOnBounds="true" AnchorPane.bottomAnchor="0.0" AnchorPane.leftAnchor="-4.2000000000000455" AnchorPane.rightAnchor="-5.0" AnchorPane.topAnchor="0.0">
+         <image>
+            <Image url="@images/Theme.png" />
+         </image>
+      </ImageView>
+
+      <Label layoutX="375.0" layoutY="266.0" mouseTransparent="true" prefHeight="27.0" prefWidth="132.0" text="Password" textFill="#ffd700">
+         <font>
+            <Font name="Press Start 2P" size="14.0" />
+         </font>
+      </Label>
+      <PasswordField layoutX="381.0" layoutY="293.0" stylesheets="@css/style.css" />
+
+      <Button layoutX="422.0" layoutY="332.0" mnemonicParsing="false" onAction="#handleLogin" prefHeight="26.0" prefWidth="75.0" text="Login" />
+
+      <TextField layoutX="381.0" layoutY="237.0" stylesheets="@css/style.css" />
+      <Label layoutX="375.0" layoutY="209.0" mouseTransparent="true" prefHeight="27.0" prefWidth="150.0" text="User Name" textFill="#ffea00">
+         <font>
+            <Font name="Press Start 2P" size="14.0" />
+         </font>
+      </Label>
+
+      <ImageView fitHeight="34.0" fitWidth="75.0" layoutX="422.0" layoutY="328.0" mouseTransparent="true" pickOnBounds="true" AnchorPane.leftAnchor="422.0" AnchorPane.rightAnchor="402.0" AnchorPane.topAnchor="328.0">
+         <image>
+            <Image url="@images/login.jpg" />
+         </image>
+      </ImageView>
+      <Button layoutX="385.0" layoutY="369.0" mnemonicParsing="false" onAction="#goRegister" prefHeight="20.0" prefWidth="160.0" text="Creat" />
+      <ImageView fitHeight="27.0" fitWidth="180.0" layoutX="370.0" layoutY="368.0" mouseTransparent="true" pickOnBounds="true">
+         <image>
+            <Image url="@images/creat.png" />
+         </image>
+      </ImageView>
+      <ImageView fitHeight="83.0" fitWidth="84.0" layoutX="57.0" layoutY="45.0" pickOnBounds="true">
+         <image>
+            <Image url="@images/logo.jpg" />
+         </image>
+      </ImageView>
+   </children>
+</AnchorPane>
