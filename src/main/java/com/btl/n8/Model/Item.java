@@ -6,6 +6,8 @@ public abstract class Item {
     //protected Photo ?
     protected double startingPrice;
     protected int idSeller;
+
+    public Item(){}
     public Item(int id, String name, double startingPrice, int idSeller){
         this.id = id;
         this.name = name;
@@ -22,6 +24,9 @@ public abstract class Item {
     }
     public void setStartingPrice(double startingPrice){
         this.startingPrice = startingPrice;
+    }
+    public void setIdSeller(int idSeller){
+        this.idSeller = idSeller;
     }
 
     // Getter

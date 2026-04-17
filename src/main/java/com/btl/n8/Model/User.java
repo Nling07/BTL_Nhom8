@@ -1,16 +1,18 @@
 package com.btl.n8.Model;
-public abstract class User {
+public class User {
     protected int id;
     protected String account;
     protected String password;
     protected Role role;
 
-    public User(int id, String account, String password){
+    public User(){}
+    public User(int id, String account, String password, Role role){
         this.id = id;
         this.account = account;
         this.password = password;
+        this.role = role;
     }
-    public User(String account, String password){
+    public User(String account, String password, Role role){
         this.account = account;
         this.password = password;
     }
