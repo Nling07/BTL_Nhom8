@@ -8,15 +8,17 @@ public class Bid {
     private int bidderId;
     private BigDecimal amount;
     private LocalDateTime bidTime;
+    private BidStatus status;
 
     public Bid() {}
 
-    public Bid(int id, int auctionId, int bidderId, BigDecimal amount, LocalDateTime bidTime) {
+    public Bid(int id, int auctionId, int bidderId, BigDecimal amount, LocalDateTime bidTime, BidStatus status) {
         this.id = id;
         this.auctionId = auctionId;
         this.bidderId = bidderId;
         this.amount = amount;
         this.bidTime = bidTime;
+        this.status = status;
     }
 
     // Getter & Setter cho id
@@ -64,4 +66,12 @@ public class Bid {
         this.bidTime = bidTime;
     }
 
+    // Getter & Setter cho Status
+    public BidStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(BidStatus status) {
+        this.status = status;
+    }
 }

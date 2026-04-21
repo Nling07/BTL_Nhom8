@@ -4,29 +4,29 @@ public abstract class Item {
     protected int id;
     protected String name;
     //protected Photo ?
-    protected double startingPrice;
-    protected int idSeller;
+    protected int sellerId;
+    protected ItemType type;
 
     public Item(){}
-    public Item(int id, String name, double startingPrice, int idSeller){
+    public Item(int id, String name, int idSeller, ItemType type){
         this.id = id;
         this.name = name;
-        this.startingPrice = startingPrice;
-        this.idSeller = idSeller;
+        this.type = type;
+        this.sellerId = idSeller;
     }
 
     // Setter
     public void setId(int id){
         this.id = id;
     }
-    public void setname(String name){
+    public void setName(String name){
         this.name = name;
     }
-    public void setStartingPrice(double startingPrice){
-        this.startingPrice = startingPrice;
+    public void setType(ItemType type){
+        this.type = type;
     }
-    public void setIdSeller(int idSeller){
-        this.idSeller = idSeller;
+    public void setSellerId(int sellerId){
+        this.sellerId = sellerId;
     }
 
     // Getter
@@ -36,10 +36,10 @@ public abstract class Item {
     public String getName() {
         return name;
     }
-    public double getStartingPrice() {
-        return startingPrice;
+    public ItemType getType() {
+        return type;
     }
-    public int getIdSeller() {
-        return idSeller;
+    public int getSellerId() {
+        return sellerId;
     }
 }

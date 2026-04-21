@@ -4,19 +4,19 @@ import java.math.BigDecimal;
 
 public class Auction {
     private int id;
-    private int productId;
+    private int itemId;
     private BigDecimal startingPrice;
     private BigDecimal currentPrice;
     private LocalDateTime startTime;
     private LocalDateTime endTime;
-    private String status;
+    private AuctionStatus status;
 
     public Auction(){}
-    public Auction(int id, int productId, BigDecimal startingPrice,
+    public Auction(int id, int itemId, BigDecimal startingPrice,
                    BigDecimal currentPrice, LocalDateTime startTime,
-                   LocalDateTime endTime, String status) {
+                   LocalDateTime endTime, AuctionStatus status) {
         this.id = id;
-        this.productId = productId;
+        this.itemId = itemId;
         this.startingPrice = startingPrice;
         this.currentPrice = currentPrice;
         this.startTime = startTime;
@@ -34,12 +34,12 @@ public class Auction {
     }
 
     // productId
-    public int getProductId() {
-        return productId;
+    public int getItemId() {
+        return itemId;
     }
 
-    public void setProductId(int productId) {
-        this.productId = productId;
+    public void setItemId(int itemId) {
+        this.itemId = itemId;
     }
 
     // startingPrice
@@ -79,11 +79,11 @@ public class Auction {
     }
 
     // status
-    public String getStatus() {
+    public AuctionStatus getStatus() {
         return status;
     }
 
-    public void setStatus(String status) {
+    public void setStatus(AuctionStatus status) {
         this.status = status;
     }
 }

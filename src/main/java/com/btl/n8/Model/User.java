@@ -1,5 +1,5 @@
 package com.btl.n8.Model;
-public class User {
+public abstract class User {
     protected int id;
     protected String account;
     protected String password;
