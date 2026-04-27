@@ -13,7 +13,7 @@
     <children>
         <ImageView fitHeight="532.0" fitWidth="904.0" layoutX="-5.0" mouseTransparent="true" pickOnBounds="true" AnchorPane.bottomAnchor="0.0" AnchorPane.leftAnchor="-5.0" AnchorPane.rightAnchor="-1.0" AnchorPane.topAnchor="0.0">
             <image>
-                <Image url="@images/Theme.png" />
+                <Image url="@../images/Theme.png" />
             </image>
         </ImageView>
 
@@ -22,11 +22,11 @@
                 <Font name="Press Start 2P" size="14.0" />
             </font>
         </Label>
-        <PasswordField layoutX="379.0" layoutY="273.0" stylesheets="@css/style.css" />
+        <PasswordField layoutX="379.0" layoutY="273.0" stylesheets="@../css/style.css" />
 
         <Button layoutX="426.0" layoutY="358.0" mnemonicParsing="false" onAction="#handleRegister" prefHeight="18.0" prefWidth="65.0" text="Login" />
 
-        <TextField layoutX="378.0" layoutY="216.0" stylesheets="@css/style.css" />
+        <TextField layoutX="378.0" layoutY="216.0" stylesheets="@../css/style.css" />
         <Label layoutX="382.0" layoutY="189.0" prefHeight="26.0" prefWidth="150.0" text="User Name" textFill="GOLD">
             <font>
                 <Font name="Press Start 2P" size="14.0" />
@@ -35,21 +35,21 @@
 
         <ImageView fitHeight="34.0" fitWidth="73.0" layoutX="423.0" layoutY="357.0" mouseTransparent="true" pickOnBounds="true" preserveRatio="true">
             <image>
-                <Image url="@images/register.png" />
+                <Image url="@../images/register.png" />
             </image>
         </ImageView>
         <Button layoutX="379.0" layoutY="397.0" mnemonicParsing="false" onAction="#goLogin" prefHeight="20.0" prefWidth="160.0" text="Creat" />
         <ImageView fitHeight="28.0" fitWidth="172.0" layoutX="373.0" layoutY="396.0" mouseTransparent="true" pickOnBounds="true" preserveRatio="true">
             <image>
-                <Image url="@images/alreadyhaveone.png" />
+                <Image url="@../images/alreadyhaveone.png" />
             </image>
         </ImageView>
         <ImageView fitHeight="83.0" fitWidth="84.0" layoutX="57.0" layoutY="45.0" pickOnBounds="true" preserveRatio="true">
             <image>
-                <Image url="@images/logo.jpg" />
+                <Image url="@../images/logo.jpg" />
             </image>
         </ImageView>
-      <PasswordField layoutX="380.0" layoutY="322.0" stylesheets="@css/style.css" />
+      <PasswordField layoutX="380.0" layoutY="322.0" stylesheets="@../css/style.css" />
       <Label layoutX="348.0" layoutY="295.0" prefHeight="26.0" prefWidth="224.0" text="Re-enter Password" textFill="GOLD">
          <font>
             <Font name="Press Start 2P" size="13.0" />

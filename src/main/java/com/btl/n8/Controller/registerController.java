@@ -26,7 +26,7 @@ public class registerController {
 
         try {
 
-            Parent root = FXMLLoader.load(getClass().getResource("/home.fxml"));
+            Parent root = FXMLLoader.load(getClass().getResource("/fxml/home.fxml"));
 
             Stage stage = (Stage)((Node)event.getSource()).getScene().getWindow();
 
@@ -40,7 +40,7 @@ public class registerController {
     }
     public void goLogin(ActionEvent event) throws Exception {
 
-        Parent root = FXMLLoader.load(getClass().getResource("/login.fxml"));
+        Parent root = FXMLLoader.load(getClass().getResource("/fxml/login.fxml"));
 
         Stage stage = (Stage)((Node)event.getSource()).getScene().getWindow();
 
