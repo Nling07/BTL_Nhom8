@@ -5,16 +5,17 @@ import java.math.BigDecimal;
 import java.sql.*;
 
 public class UserDAOImpl implements UserDAO {
-    private Connection conn;
+    private final Connection conn;
     public UserDAOImpl(Connection conn){
         this.conn = conn;
     }
 
     @Override
     public boolean insert(User user) {
-        try {
-            String sql = "INSERT INTO users (account, password, role) VALUES (?, ?, ?)";
-            PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
+        String sql = "INSERT INTO users (account, password, role) VALUES (?, ?, ?)";
+
+        // Sử dụng try-with-resources để tự động đóng ps và rs
+        try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
 
             ps.setString(1, user.getAccount());
             ps.setString(2, user.getPassword());
@@ -23,40 +24,38 @@ public class UserDAOImpl implements UserDAO {
             int rows = ps.executeUpdate();
 
             if (rows > 0) {
-                ResultSet rs = ps.getGeneratedKeys();
+                try (ResultSet rs = ps.getGeneratedKeys()) {
+                    if (rs.next()) {
+                        int userId = rs.getInt(1);
+                        user.setId(userId);
 
-                if (rs.next()) {
-                    int userId = rs.getInt(1);
-                    user.setId(userId);
+                        // Xử lý BIDDER
+                        if (user instanceof Bidder) {
+                            String sql2 = "INSERT INTO bidders(user_id, balance) VALUES (?, ?)";
+                            try (PreparedStatement ps2 = conn.prepareStatement(sql2)) {
+                                ps2.setInt(1, userId);
+                                ps2.setBigDecimal(2, ((Bidder) user).getBalance());
+                                ps2.executeUpdate();
+                            } // ps2 tự đóng ở đây
+                        }
 
-                    // BIDDER
-                    if (user instanceof Bidder) {
-                        String sql2 = "INSERT INTO bidders(user_id, balance) VALUES (?, ?)";
-                        PreparedStatement ps2 = conn.prepareStatement(sql2);
-
-                        ps2.setInt(1, userId);
-                        ps2.setBigDecimal(2, ((Bidder) user).getBalance());
-
-                        ps2.executeUpdate();
+                        // Xử lý SELLER
+                        if (user instanceof Seller) {
+                            String sql3 = "INSERT INTO sellers(seller_id) VALUES (?)";
+                            try (PreparedStatement ps3 = conn.prepareStatement(sql3)) {
+                                ps3.setInt(1, userId);
+                                ps3.executeUpdate();
+                            } // ps3 tự đóng ở đây
+                        }
                     }
-
-                    // SELLER
-                    if (user instanceof Seller) {
-                        String sql3 = "INSERT INTO sellers(user_id) VALUES (?)";
-                        PreparedStatement ps3 = conn.prepareStatement(sql3);
-
-                        ps3.setInt(1, userId);
-                        ps3.executeUpdate();
-                    }
-                }
-
+                } // rs tự đóng ở đây
                 return true;
             }
 
         } catch (SQLIntegrityConstraintViolationException e) {
-            System.out.println("Trùng username hoặc lỗi ràng buộc");
+            System.err.println("Trùng username hoặc lỗi ràng buộc: " + e.getMessage());
         } catch (SQLException e) {
-            System.out.println("Lỗi SQL khi insert");
+            System.err.println("Lỗi SQL khi insert: " + e.getMessage());
         }
 
         return false;
@@ -64,10 +63,9 @@ public class UserDAOImpl implements UserDAO {
 
     @Override
     public boolean update(User user) {
-        try {
-            String sql = "UPDATE users SET account = ?, password = ? WHERE user_id = ?";
-            PreparedStatement ps = conn.prepareStatement(sql);
+        String sql = "UPDATE users SET account = ?, password = ? WHERE user_id = ?";
 
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, user.getAccount());
             ps.setString(2, user.getPassword());
             ps.setInt(3, user.getId());
@@ -75,20 +73,16 @@ public class UserDAOImpl implements UserDAO {
             int rows = ps.executeUpdate();
 
             if (rows > 0) {
-
                 // BIDDER
                 if (user instanceof Bidder) {
                     String sql2 = "UPDATE bidders SET balance = ? WHERE user_id = ?";
-                    PreparedStatement ps2 = conn.prepareStatement(sql2);
-
-                    ps2.setBigDecimal(1, ((Bidder) user).getBalance());
-                    ps2.setInt(2, user.getId());
-
-                    ps2.executeUpdate();
+                    try (PreparedStatement ps2 = conn.prepareStatement(sql2)) {
+                        ps2.setBigDecimal(1, ((Bidder) user).getBalance());
+                        ps2.setInt(2, user.getId());
+                        ps2.executeUpdate();
+                    }
                 }
-
-                // SELLER không có field riêng → không cần update
-
+                // SELLER không có field riêng → không cần update thêm
                 return true;
             }
 
@@ -104,28 +98,26 @@ public class UserDAOImpl implements UserDAO {
 
     @Override
     public User findByAccount(String account) {
-        try {
-            String sql = """
-            SELECT u.user_id, u.account, u.password, u.role,
-                   b.balance,
-                   s.user_id AS s.seller_id
-            FROM users u
-            LEFT JOIN bidders b ON u.user_id = b.user_id
-            LEFT JOIN sellers s ON u.user_id = s.user_id
-            WHERE u.account = ?
-        """;
+        String sql = """
+        SELECT u.user_id, u.account, u.password, u.role,
+               b.balance,
+               s.seller_id
+        FROM users u
+        LEFT JOIN bidders b ON u.user_id = b.user_id
+        LEFT JOIN sellers s ON u.user_id = s.seller_id
+        WHERE u.account = ?
+    """;
 
-            PreparedStatement ps = conn.prepareStatement(sql);
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, account);
 
-            ResultSet rs = ps.executeQuery();
-
-            if (rs.next()) {
-                return mapUser(rs);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return mapUser(rs);
+                }
             }
-
         } catch (SQLException e) {
-            System.out.println("Lỗi SQL khi findByAccount");
+            System.out.println("Lỗi SQL khi findByAccount: " + e.getMessage());
         }
 
         return null;
@@ -133,28 +125,26 @@ public class UserDAOImpl implements UserDAO {
 
     @Override
     public User findById(int id) {
-        try {
-            String sql = """
-            SELECT u.user_id, u.account, u.password, u.role,
-                   b.balance,
-                   s.user_id AS s.seller_id
-            FROM users u
-            LEFT JOIN bidders b ON u.user_id = b.user_id
-            LEFT JOIN sellers s ON u.user_id = s.user_id
-            WHERE u.user_id = ?
-        """;
+        String sql = """
+        SELECT u.user_id, u.account, u.password, u.role,
+               b.balance,
+               s.seller_id
+        FROM users u
+        LEFT JOIN bidders b ON u.user_id = b.user_id
+        LEFT JOIN sellers s ON u.user_id = s.seller_id
+        WHERE u.user_id = ?
+    """;
 
-            PreparedStatement ps = conn.prepareStatement(sql);
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, id);
 
-            ResultSet rs = ps.executeQuery();
-
-            if (rs.next()) {
-                return mapUser(rs);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return mapUser(rs);
+                }
             }
-
         } catch (SQLException e) {
-            System.out.println("Lỗi SQL khi findById");
+            System.out.println("Lỗi SQL khi findById: " + e.getMessage());
         }
 
         return null;

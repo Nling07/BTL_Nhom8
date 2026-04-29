@@ -7,7 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class ItemDAOImpl implements ItemDAO {
-    private Connection conn;
+    private final Connection conn;
 
     public ItemDAOImpl(Connection conn) {
         this.conn = conn;
@@ -15,10 +15,9 @@ public class ItemDAOImpl implements ItemDAO {
 
     @Override
     public boolean insert(Item item) {
-        try {
-            String sql = "INSERT INTO items(name, seller_id, type) VALUES (?, ?, ?)";
-            PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
+        String sql = "INSERT INTO items(name, seller_id, type) VALUES (?, ?, ?)";
 
+        try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setString(1, item.getName());
             ps.setInt(2, item.getSellerId());
             ps.setString(3, item.getType().name());
@@ -26,17 +25,17 @@ public class ItemDAOImpl implements ItemDAO {
             int rows = ps.executeUpdate();
 
             if (rows > 0) {
-                ResultSet rs = ps.getGeneratedKeys();
-                if (rs.next()) {
-                    item.setId(rs.getInt(1));
+                try (ResultSet rs = ps.getGeneratedKeys()) {
+                    if (rs.next()) {
+                        item.setId(rs.getInt(1));
+                    }
                 }
                 return true;
             }
-
         } catch (SQLIntegrityConstraintViolationException e) {
             System.out.println("Seller không tồn tại hoặc lỗi ràng buộc");
         } catch (SQLException e) {
-            System.out.println("Lỗi SQL khi insert item");
+            System.out.println("Lỗi SQL khi insert item: " + e.getMessage());
         }
 
         return false;
@@ -44,19 +43,18 @@ public class ItemDAOImpl implements ItemDAO {
 
     @Override
     public Item findById(int id) {
-        try {
-            String sql = "SELECT * FROM items WHERE item_id = ?";
-            PreparedStatement ps = conn.prepareStatement(sql);
+        String sql = "SELECT * FROM items WHERE item_id = ?";
 
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, id);
-            ResultSet rs = ps.executeQuery();
 
-            if (rs.next()) {
-                return mapItem(rs);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return mapItem(rs);
+                }
             }
-
         } catch (SQLException e) {
-            System.out.println("Lỗi SQL khi findById item");
+            System.out.println("Lỗi SQL khi findById item: " + e.getMessage());
         }
 
         return null;
@@ -65,19 +63,17 @@ public class ItemDAOImpl implements ItemDAO {
     @Override
     public List<Item> findAll() {
         List<Item> list = new ArrayList<>();
+        String sql = "SELECT * FROM items";
 
-        try {
-            String sql = "SELECT * FROM items";
-            PreparedStatement ps = conn.prepareStatement(sql);
-
-            ResultSet rs = ps.executeQuery();
+        try (PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
 
             while (rs.next()) {
                 list.add(mapItem(rs));
             }
 
         } catch (SQLException e) {
-            System.out.println("Lỗi SQL khi findAll item");
+            System.out.println("Lỗi SQL khi findAll item: " + e.getMessage());
         }
 
         return list;
@@ -86,20 +82,18 @@ public class ItemDAOImpl implements ItemDAO {
     @Override
     public List<Item> findBySeller(int sellerId) {
         List<Item> list = new ArrayList<>();
+        String sql = "SELECT * FROM items WHERE seller_id = ?";
 
-        try {
-            String sql = "SELECT * FROM items WHERE seller_id = ?";
-            PreparedStatement ps = conn.prepareStatement(sql);
-
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, sellerId);
-            ResultSet rs = ps.executeQuery();
 
-            while (rs.next()) {
-                list.add(mapItem(rs));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    list.add(mapItem(rs));
+                }
             }
-
         } catch (SQLException e) {
-            System.out.println("Lỗi SQL khi findBySeller");
+            System.out.println("Lỗi SQL khi findBySeller: " + e.getMessage());
         }
 
         return list;

@@ -8,7 +8,7 @@ import java.sql.*;
 import java.time.LocalDateTime;
 
 public class AuctionDAOImpl implements AuctionDAO{
-    private Connection conn;
+    private final Connection conn;
 
     public AuctionDAOImpl(Connection conn) {
         this.conn = conn;
@@ -16,14 +16,12 @@ public class AuctionDAOImpl implements AuctionDAO{
 
     @Override
     public boolean insert(Auction auction) {
-        try {
-            String sql = """
-                INSERT INTO auctions(item_id, starting_price, current_price, start_time, end_time, status)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """;
+        String sql = """
+        INSERT INTO auctions(item_id, starting_price, current_price, start_time, end_time, status)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """;
 
-            PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
-
+        try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setInt(1, auction.getItemId());
             ps.setBigDecimal(2, auction.getStartingPrice());
             ps.setBigDecimal(3, auction.getCurrentPrice());
@@ -34,17 +32,17 @@ public class AuctionDAOImpl implements AuctionDAO{
             int rows = ps.executeUpdate();
 
             if (rows > 0) {
-                ResultSet rs = ps.getGeneratedKeys();
-                if (rs.next()) {
-                    auction.setId(rs.getInt(1));
+                try (ResultSet rs = ps.getGeneratedKeys()) {
+                    if (rs.next()) {
+                        auction.setId(rs.getInt(1));
+                    }
                 }
                 return true;
             }
-
         } catch (SQLIntegrityConstraintViolationException e) {
             System.out.println("Item không tồn tại hoặc đã có auction");
         } catch (SQLException e) {
-            System.out.println("Lỗi SQL khi insert auction");
+            System.out.println("Lỗi SQL khi insert auction: " + e.getMessage());
         }
 
         return false;
@@ -52,19 +50,18 @@ public class AuctionDAOImpl implements AuctionDAO{
 
     @Override
     public Auction findById(int id) {
-        try {
-            String sql = "SELECT * FROM auctions WHERE auction_id = ?";
-            PreparedStatement ps = conn.prepareStatement(sql);
+        String sql = "SELECT * FROM auctions WHERE auction_id = ?";
 
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, id);
-            ResultSet rs = ps.executeQuery();
 
-            if (rs.next()) {
-                return mapAuction(rs);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return mapAuction(rs);
+                }
             }
-
         } catch (SQLException e) {
-            System.out.println("Lỗi SQL khi findById auction");
+            System.out.println("Lỗi SQL khi findById auction: " + e.getMessage());
         }
 
         return null;
@@ -72,19 +69,18 @@ public class AuctionDAOImpl implements AuctionDAO{
 
     @Override
     public Auction findByItemId(int itemId) {
-        try {
-            String sql = "SELECT * FROM auctions WHERE item_id = ?";
-            PreparedStatement ps = conn.prepareStatement(sql);
+        String sql = "SELECT * FROM auctions WHERE item_id = ?";
 
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, itemId);
-            ResultSet rs = ps.executeQuery();
 
-            if (rs.next()) {
-                return mapAuction(rs);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return mapAuction(rs);
+                }
             }
-
         } catch (SQLException e) {
-            System.out.println("Lỗi SQL khi findByItemId");
+            System.out.println("Lỗi SQL khi findByItemId: " + e.getMessage());
         }
 
         return null;
@@ -92,15 +88,13 @@ public class AuctionDAOImpl implements AuctionDAO{
 
     @Override
     public boolean update(Auction auction) {
-        try {
-            String sql = """
-                UPDATE auctions 
-                SET starting_price = ?, current_price = ?, start_time = ?, end_time = ?, status = ?
-                WHERE auction_id = ?
-            """;
+        String sql = """
+        UPDATE auctions 
+        SET starting_price = ?, current_price = ?, start_time = ?, end_time = ?, status = ?
+        WHERE auction_id = ?
+    """;
 
-            PreparedStatement ps = conn.prepareStatement(sql);
-
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setBigDecimal(1, auction.getStartingPrice());
             ps.setBigDecimal(2, auction.getCurrentPrice());
             ps.setTimestamp(3, Timestamp.valueOf(auction.getStartTime()));
@@ -111,9 +105,8 @@ public class AuctionDAOImpl implements AuctionDAO{
             int rows = ps.executeUpdate();
 
             return rows > 0;
-
         } catch (SQLException e) {
-            System.out.println("Lỗi SQL khi update auction");
+            System.out.println("Lỗi SQL khi update auction: " + e.getMessage());
         }
 
         return false;
@@ -121,17 +114,15 @@ public class AuctionDAOImpl implements AuctionDAO{
 
     @Override
     public boolean updateCurrentPrice(int auctionId, BigDecimal price) {
-        try {
-            String sql = "UPDATE auctions SET current_price = ? WHERE auction_id = ?";
-            PreparedStatement ps = conn.prepareStatement(sql);
+        String sql = "UPDATE auctions SET current_price = ? WHERE auction_id = ?";
 
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setBigDecimal(1, price);
             ps.setInt(2, auctionId);
 
             return ps.executeUpdate() > 0;
-
         } catch (SQLException e) {
-            System.out.println("Lỗi SQL khi update current price");
+            System.out.println("Lỗi SQL khi update current price: " + e.getMessage());
         }
 
         return false;
