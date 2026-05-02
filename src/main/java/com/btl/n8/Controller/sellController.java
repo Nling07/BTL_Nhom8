@@ -210,7 +210,6 @@ public class sellController {
     private String fmt(BigDecimal n) {
         return String.format("%,.0f ₫", n);
     }
-
     public static class SellRow {
         private final int id;
         private final String name, type, startPrice, currentPrice, status;
