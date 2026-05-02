@@ -7,5 +7,9 @@ public class Card extends Item{
         super(id, name, idSeller, ItemType.CARD);
     }
 
+    public Card(String name, int idSeller){
+        super(name, idSeller, ItemType.CARD);
+    }
+
     public Card(){super();}
 }

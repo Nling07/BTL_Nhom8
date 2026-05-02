@@ -2,6 +2,7 @@ package com.btl.n8.service;
 
 import com.btl.n8.Connection.UserDAO;
 import com.btl.n8.Model.Admin;
+import com.btl.n8.Model.Bidder;
 import com.btl.n8.Model.User;
 import com.btl.n8.Model.Role;
 
@@ -33,6 +34,13 @@ public class AdminService {
     // Lấy thông tin admin theo id
     public Admin getAdminById(int id) {
         User user = userDAO.findById(id);
+        if (user instanceof Admin admin && user.getRole() == Role.ADMIN) {
+            return admin;
+        }
+        return null;
+    }
+    public Admin getAdminByAccount(String account) {
+        User user = userDAO.findByAccount(account);
         if (user instanceof Admin admin && user.getRole() == Role.ADMIN) {
             return admin;
         }
