@@ -15,6 +15,7 @@ public abstract class User {
     public User(String account, String password, Role role){
         this.account = account;
         this.password = password;
+        this.role = role;
     }
 
     // Setter

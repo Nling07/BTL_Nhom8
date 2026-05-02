@@ -14,6 +14,11 @@ public abstract class Item {
         this.type = type;
         this.sellerId = idSeller;
     }
+    public Item(String name, int idSeller, ItemType type){
+        this.name = name;
+        this.type = type;
+        this.sellerId = idSeller;
+    }
 
     // Setter
     public void setId(int id){

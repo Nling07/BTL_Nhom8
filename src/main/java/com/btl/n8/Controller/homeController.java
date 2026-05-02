@@ -6,13 +6,11 @@ import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.stage.Stage;
-import javafx.fxml.FXML;
-import javafx.scene.control.Label;
 
 public class homeController {
     public void Bid(ActionEvent event) throws Exception {
 
-        Parent root = FXMLLoader.load(getClass().getResource("/bid.fxml"));
+        Parent root = FXMLLoader.load(getClass().getResource("/fxml/bid.fxml"));
 
         Stage stage = (Stage)((Node)event.getSource()).getScene().getWindow();
 
@@ -21,7 +19,7 @@ public class homeController {
     }
     public void Sell(ActionEvent event) throws Exception {
 
-        Parent root = FXMLLoader.load(getClass().getResource("/sell.fxml"));
+        Parent root = FXMLLoader.load(getClass().getResource("/fxml/sell.fxml"));
 
         Stage stage = (Stage)((Node)event.getSource()).getScene().getWindow();
 
@@ -30,7 +28,7 @@ public class homeController {
     }
     public void account(ActionEvent event) throws Exception {
 
-        Parent root = FXMLLoader.load(getClass().getResource("/account.fxml"));
+        Parent root = FXMLLoader.load(getClass().getResource("/fxml/account.fxml"));
 
         Stage stage = (Stage)((Node)event.getSource()).getScene().getWindow();
 
