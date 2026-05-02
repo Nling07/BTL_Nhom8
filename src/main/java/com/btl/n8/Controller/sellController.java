@@ -136,7 +136,6 @@ public class sellController {
             messageLabel.setText("Invalid Price");
             return;
         }
-
         // Disable button tránh bấm nhiều lần khi đang xử lý
         ((Button)event.getSource()).setDisable(true);
 
@@ -148,7 +147,6 @@ public class sellController {
                     case FIGURE -> new Figure(0, name, sellerId);
                     case CARD   -> new Card(0, name, sellerId);
                 };
-
                 boolean itemOk = itemDAO.insert(item);
                 if (!itemOk) {
                     Platform.runLater(() -> {
