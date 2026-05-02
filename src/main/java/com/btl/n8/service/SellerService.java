@@ -1,6 +1,7 @@
 package com.btl.n8.service;
 
 import com.btl.n8.Connection.UserDAO;
+import com.btl.n8.Model.Bidder;
 import com.btl.n8.Model.Seller;
 import com.btl.n8.Model.User;
 import com.btl.n8.Model.Role;
@@ -33,6 +34,13 @@ public class SellerService {
     // Lấy thông tin seller theo id
     public Seller getSellerById(int id) {
         User user = userDAO.findById(id);
+        if (user instanceof Seller seller && user.getRole() == Role.SELLER) {
+            return seller;
+        }
+        return null;
+    }
+    public Seller getSellerByAccount(String account) {
+        User user = userDAO.findByAccount(account);
         if (user instanceof Seller seller && user.getRole() == Role.SELLER) {
             return seller;
         }

@@ -40,6 +40,13 @@ public class BidderService {
         }
         return null;
     }
+    public Bidder getBidderByAccount(String account) {
+        User user = userDAO.findByAccount(account);
+        if (user instanceof Bidder bidder && user.getRole() == Role.BIDDER) {
+            return bidder;
+        }
+        return null;
+    }
 
     // Cập nhật số dư
     public boolean updateBalance(int bidderId, BigDecimal newBalance) {
