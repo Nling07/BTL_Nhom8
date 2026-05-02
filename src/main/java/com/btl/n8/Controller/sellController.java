@@ -3,6 +3,7 @@ package com.btl.n8.Controller;
 import com.btl.n8.Connection.*;
 import com.btl.n8.Model.*;
 
+import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.event.ActionEvent;
@@ -41,7 +42,6 @@ public class sellController {
     private File selectedImage;
     private ObservableList<SellRow> myItems = FXCollections.observableArrayList();
 
-    // TODO: thay bằng ID seller đang đăng nhập, truyền từ loginController
     private int sellerId = 1;
 
     private ItemDAO itemDAO;
@@ -49,10 +49,8 @@ public class sellController {
 
     @FXML
     public void initialize() {
-        // Setup ComboBox
         typeCombo.setItems(FXCollections.observableArrayList("POSTER", "FIGURE", "CARD"));
 
-        // Setup columns
         colId.setCellValueFactory(new PropertyValueFactory<>("id"));
         colName.setCellValueFactory(new PropertyValueFactory<>("name"));
         colType.setCellValueFactory(new PropertyValueFactory<>("type"));
@@ -62,15 +60,19 @@ public class sellController {
 
         myItemTable.setItems(myItems);
 
-        // Kết nối DB
-        try {
-            Connection conn = DataConnection.getConnection();
-            itemDAO    = new ItemDAOImpl(conn);
-            auctionDAO = new AuctionDAOImpl(conn);
-            loadMyItems();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+        // Kết nối DB trên background thread để không lag UI
+        new Thread(() -> {
+            try {
+                Connection conn = DataConnection.getConnection();
+                itemDAO    = new ItemDAOImpl(conn);
+                auctionDAO = new AuctionDAOImpl(conn);
+
+                Platform.runLater(() -> loadMyItems());
+
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }).start();
     }
 
     private void loadMyItems() {
@@ -81,7 +83,7 @@ public class sellController {
             Auction auction = auctionDAO.findByItemId(item.getId());
             String startPrice   = auction != null ? fmt(auction.getStartingPrice()) : "-";
             String currentPrice = auction != null ? fmt(auction.getCurrentPrice())  : "-";
-            String status       = auction != null ? auction.getStatus().name()       : "NO AUCTION";
+            String status       = auction != null ? auction.getStatus().name()      : "NO AUCTION";
 
             myItems.add(new SellRow(
                     item.getId(),
@@ -114,13 +116,12 @@ public class sellController {
     public void handleSell(ActionEvent event) {
         messageLabel.setText("");
 
-        String name     = nameField.getText().trim();
-        String type     = typeCombo.getValue();
+        String name      = nameField.getText().trim();
+        String type      = typeCombo.getValue();
         String priceText = priceField.getText().trim();
 
-        // Validate
         if (name.isEmpty() || type == null || priceText.isEmpty()) {
-            messageLabel.setText("Vui lòng nhập đầy đủ thông tin!");
+            messageLabel.setText("Please enter full info");
             return;
         }
 
@@ -128,63 +129,74 @@ public class sellController {
         try {
             startingPrice = new BigDecimal(priceText);
             if (startingPrice.compareTo(BigDecimal.ZERO) <= 0) {
-                messageLabel.setText("Giá phải lớn hơn 0!");
+                messageLabel.setText("Invalid Price");
                 return;
             }
         } catch (NumberFormatException e) {
-            messageLabel.setText("Giá không hợp lệ!");
+            messageLabel.setText("Invalid Price");
             return;
         }
 
-        try {
-            // Insert item
-            ItemType itemType = ItemType.valueOf(type);
-            Item item = switch (itemType) {
-                case POSTER -> new Poster(0, name, sellerId);
-                case FIGURE -> new Figure(0, name, sellerId);
-                case CARD   -> new Card(0, name, sellerId);
-            };
+        // Disable button tránh bấm nhiều lần khi đang xử lý
+        ((Button)event.getSource()).setDisable(true);
 
-            boolean itemOk = itemDAO.insert(item);
-            if (!itemOk) {
-                messageLabel.setText("Lỗi khi tạo item!");
-                return;
+        new Thread(() -> {
+            try {
+                ItemType itemType = ItemType.valueOf(type);
+                Item item = switch (itemType) {
+                    case POSTER -> new Poster(0, name, sellerId);
+                    case FIGURE -> new Figure(0, name, sellerId);
+                    case CARD   -> new Card(0, name, sellerId);
+                };
+
+                boolean itemOk = itemDAO.insert(item);
+                if (!itemOk) {
+                    Platform.runLater(() -> {
+                        messageLabel.setText("Error when creating item!");
+                        ((Button)event.getSource()).setDisable(false);
+                    });
+                    return;
+                }
+
+                LocalDateTime startTime = LocalDateTime.now();
+                LocalDateTime endTime   = startTime.plusDays(2);
+
+                Auction auction = new Auction(
+                        0, item.getId(),
+                        startingPrice, startingPrice,
+                        startTime, endTime,
+                        AuctionStatus.OPEN
+                );
+
+                boolean auctionOk = auctionDAO.insert(auction);
+                if (!auctionOk) {
+                    Platform.runLater(() -> {
+                        messageLabel.setText("Auction can't create!");
+                        ((Button)event.getSource()).setDisable(false);
+                    });
+                    return;
+                }
+
+                Platform.runLater(() -> {
+                    nameField.clear();
+                    typeCombo.setValue(null);
+                    priceField.clear();
+                    uploadLabel.setText("");
+                    selectedImage = null;
+                    messageLabel.setStyle("-fx-text-fill: green;");
+                    messageLabel.setText("Success!");
+                    ((Button)event.getSource()).setDisable(false);
+                    loadMyItems();
+                });
+
+            } catch (Exception e) {
+                Platform.runLater(() -> {
+                    messageLabel.setText("Error!");
+                    ((Button)event.getSource()).setDisable(false);
+                });
+                e.printStackTrace();
             }
-
-            // Tự động tính thời gian: start = now, end = now + 2 ngày
-            LocalDateTime startTime = LocalDateTime.now();
-            LocalDateTime endTime   = startTime.plusDays(2);
-
-            // Insert auction
-            Auction auction = new Auction(
-                    0, item.getId(),
-                    startingPrice, startingPrice,
-                    startTime, endTime,
-                    AuctionStatus.OPEN
-            );
-
-            boolean auctionOk = auctionDAO.insert(auction);
-            if (!auctionOk) {
-                messageLabel.setText("Lỗi khi tạo auction!");
-                return;
-            }
-
-            // Reset form
-            nameField.clear();
-            typeCombo.setValue(null);
-            priceField.clear();
-            uploadLabel.setText("");
-            selectedImage = null;
-            messageLabel.setStyle("-fx-text-fill: green;");
-            messageLabel.setText("✓ Đăng bán thành công!");
-
-            // Reload bảng
-            loadMyItems();
-
-        } catch (Exception e) {
-            messageLabel.setText("Lỗi hệ thống!");
-            e.printStackTrace();
-        }
+        }).start();
     }
 
     @FXML
@@ -199,7 +211,6 @@ public class sellController {
         return String.format("%,.0f ₫", n);
     }
 
-    // Inner class bind TableView
     public static class SellRow {
         private final int id;
         private final String name, type, startPrice, currentPrice, status;

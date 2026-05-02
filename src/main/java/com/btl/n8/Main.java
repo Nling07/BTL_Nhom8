@@ -9,12 +9,11 @@ public class Main extends Application {
 
     @Override
     public void start(Stage stage) throws Exception {
-        FXMLLoader loader = new FXMLLoader(
-                getClass().getResource("/fxml/login.fxml")
-        );
+        FXMLLoader loader = new FXMLLoader(getClass().getResource("/fxml/login.fxml"));
 
         stage.setTitle("Pokemon Auction System");
         stage.setScene(new Scene(loader.load()));
+        stage.setResizable(false);
         stage.show();
     }
 
