@@ -2,6 +2,8 @@ package com.btl.n8.Controller;
 
 import com.btl.n8.Connection.*;
 import com.btl.n8.Model.*;
+import com.btl.n8.service.AuctionService;
+import com.btl.n8.service.ItemService;
 
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
@@ -41,11 +43,10 @@ public class sellController {
 
     private File selectedImage;
     private ObservableList<SellRow> myItems = FXCollections.observableArrayList();
-
     private int sellerId = 1;
 
-    private ItemDAO itemDAO;
-    private AuctionDAO auctionDAO;
+    private ItemService itemService;
+    private AuctionService auctionService;
 
     @FXML
     public void initialize() {
@@ -60,15 +61,13 @@ public class sellController {
 
         myItemTable.setItems(myItems);
 
-        // Kết nối DB trên background thread để không lag UI
         new Thread(() -> {
             try {
                 Connection conn = DataConnection.getConnection();
-                itemDAO    = new ItemDAOImpl(conn);
-                auctionDAO = new AuctionDAOImpl(conn);
+                itemService    = new ItemService(new ItemDAOImpl(conn));
+                auctionService = new AuctionService(new AuctionDAOImpl(conn));
 
                 Platform.runLater(() -> loadMyItems());
-
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -77,10 +76,10 @@ public class sellController {
 
     private void loadMyItems() {
         myItems.clear();
-        List<Item> items = itemDAO.findBySeller(sellerId);
+        List<Item> items = itemService.getItemsBySeller(sellerId);
 
         for (Item item : items) {
-            Auction auction = auctionDAO.findByItemId(item.getId());
+            Auction auction     = auctionService.getAuctionByItemId(item.getId());
             String startPrice   = auction != null ? fmt(auction.getStartingPrice()) : "-";
             String currentPrice = auction != null ? fmt(auction.getCurrentPrice())  : "-";
             String status       = auction != null ? auction.getStatus().name()      : "NO AUCTION";
@@ -108,7 +107,7 @@ public class sellController {
         selectedImage = fc.showOpenDialog(stage);
 
         if (selectedImage != null) {
-            uploadLabel.setText("✓ " + selectedImage.getName());
+            uploadLabel.setText("ok " + selectedImage.getName());
         }
     }
 
@@ -136,26 +135,30 @@ public class sellController {
             messageLabel.setText("Invalid Price");
             return;
         }
-        // Disable button tránh bấm nhiều lần khi đang xử lý
+
         ((Button)event.getSource()).setDisable(true);
 
         new Thread(() -> {
             try {
+                // Tạo item đúng loại
                 ItemType itemType = ItemType.valueOf(type);
                 Item item = switch (itemType) {
                     case POSTER -> new Poster(0, name, sellerId);
                     case FIGURE -> new Figure(0, name, sellerId);
                     case CARD   -> new Card(0, name, sellerId);
                 };
-                boolean itemOk = itemDAO.insert(item);
+
+                // Dùng ItemService để insert
+                boolean itemOk = itemService.addItem(item);
                 if (!itemOk) {
                     Platform.runLater(() -> {
-                        messageLabel.setText("Error when creating item!");
+                        messageLabel.setText("Error when creating item");
                         ((Button)event.getSource()).setDisable(false);
                     });
                     return;
                 }
 
+                // Tính thời gian: start = now, end = now + 2 ngày
                 LocalDateTime startTime = LocalDateTime.now();
                 LocalDateTime endTime   = startTime.plusDays(2);
 
@@ -166,10 +169,11 @@ public class sellController {
                         AuctionStatus.OPEN
                 );
 
-                boolean auctionOk = auctionDAO.insert(auction);
+                // Dùng AuctionService để insert
+                boolean auctionOk = auctionService.createAuction(auction);
                 if (!auctionOk) {
                     Platform.runLater(() -> {
-                        messageLabel.setText("Auction can't create!");
+                        messageLabel.setText("Auction can't create");
                         ((Button)event.getSource()).setDisable(false);
                     });
                     return;
@@ -182,14 +186,14 @@ public class sellController {
                     uploadLabel.setText("");
                     selectedImage = null;
                     messageLabel.setStyle("-fx-text-fill: green;");
-                    messageLabel.setText("Success!");
+                    messageLabel.setText("Success");
                     ((Button)event.getSource()).setDisable(false);
                     loadMyItems();
                 });
 
             } catch (Exception e) {
                 Platform.runLater(() -> {
-                    messageLabel.setText("Error!");
+                    messageLabel.setText("Error");
                     ((Button)event.getSource()).setDisable(false);
                 });
                 e.printStackTrace();
@@ -208,6 +212,7 @@ public class sellController {
     private String fmt(BigDecimal n) {
         return String.format("%,.0f ₫", n);
     }
+
     public static class SellRow {
         private final int id;
         private final String name, type, startPrice, currentPrice, status;
