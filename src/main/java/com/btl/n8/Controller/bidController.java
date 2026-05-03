@@ -3,6 +3,7 @@ package com.btl.n8.Controller;
 import com.btl.n8.Connection.*;
 import com.btl.n8.Model.*;
 
+import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.event.ActionEvent;
@@ -13,6 +14,7 @@ import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
+import javafx.stage.Modality;
 import javafx.stage.Stage;
 
 import java.sql.Connection;
@@ -45,14 +47,12 @@ public class bidController {
         colPrice.setCellValueFactory(new PropertyValueFactory<>("price"));
         colStatus.setCellValueFactory(new PropertyValueFactory<>("status"));
 
-        // Cột Bid button
         colAction.setCellFactory(col -> new TableCell<>() {
             private final Button btn = new Button("Bid");
             {
                 btn.setOnAction(e -> {
                     ItemRow row = getTableView().getItems().get(getIndex());
-                    System.out.println("Bid on item: " + row.getId());
-                    // TODO: mở màn hình đặt giá, truyền row.getAuctionId()
+                    openBidPopup(row);
                 });
             }
             @Override
@@ -63,35 +63,65 @@ public class bidController {
         });
     }
 
-    private void loadData() {
+    private void openBidPopup(ItemRow row) {
         try {
+            FXMLLoader loader = new FXMLLoader(
+                    getClass().getResource("/fxml/bidDetail.fxml"));
+            Parent root = loader.load();
+
+            // Lấy item thực từ DB
             Connection conn = DataConnection.getConnection();
             ItemDAO itemDAO = new ItemDAOImpl(conn);
-            AuctionDAO auctionDAO = new AuctionDAOImpl(conn);
+            Item item = itemDAO.findById(row.getId());
 
-            List<Item> items = itemDAO.findAll();
+            // Truyền data vào controller popup
+            bidDetailController controller = loader.getController();
+            controller.initData(row.getAuctionId(), item);
 
-            for (Item item : items) {
-                Auction auction = auctionDAO.findByItemId(item.getId());
-                String price  = auction != null ? auction.getCurrentPrice().toPlainString() + " ₫" : "-";
-                String status = auction != null ? auction.getStatus().name() : "NO AUCTION";
-                int auctionId = auction != null ? auction.getId() : -1;
+            // Tạo popup stage đè lên màn hình bid
+            Stage popup = new Stage();
+            popup.setTitle("Bid - " + row.getName());
+            popup.setScene(new Scene(root));
+            popup.initModality(Modality.APPLICATION_MODAL);
+            popup.setResizable(false);
+            popup.show();
 
-                allItems.add(new ItemRow(
-                        item.getId(),
-                        item.getName(),
-                        item.getType().name(),
-                        price,
-                        status,
-                        auctionId
-                ));
-            }
-
-            itemTable.setItems(allItems);
-
-        } catch (Exception e) {
-            e.printStackTrace();
+        } catch (Exception ex) {
+            ex.printStackTrace();
         }
+    }
+
+    private void loadData() {
+        new Thread(() -> {
+            try {
+                Connection conn = DataConnection.getConnection();
+                ItemDAO itemDAO       = new ItemDAOImpl(conn);
+                AuctionDAO auctionDAO = new AuctionDAOImpl(conn);
+
+                List<Item> items = itemDAO.findAll();
+
+                for (Item item : items) {
+                    Auction auction = auctionDAO.findByItemId(item.getId());
+                    String price    = auction != null ? auction.getCurrentPrice().toPlainString() + " ₫" : "-";
+                    String status   = auction != null ? auction.getStatus().name() : "NO AUCTION";
+                    int auctionId   = auction != null ? auction.getId() : -1;
+
+                    allItems.add(new ItemRow(
+                            item.getId(),
+                            item.getName(),
+                            item.getType().name(),
+                            price,
+                            status,
+                            auctionId
+                    ));
+                }
+
+                Platform.runLater(() -> itemTable.setItems(allItems));
+
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }).start();
     }
 
     @FXML
@@ -103,7 +133,6 @@ public class bidController {
             return;
         }
 
-        // Tìm theo ID nếu là số, theo tên nếu là chữ
         ObservableList<ItemRow> filtered = FXCollections.observableArrayList();
         try {
             int id = Integer.parseInt(query);
@@ -127,7 +156,6 @@ public class bidController {
         stage.show();
     }
 
-    // Inner class để bind vào TableView
     public static class ItemRow {
         private final int id;
         private final String name;
@@ -141,11 +169,11 @@ public class bidController {
             this.price = price; this.status = status; this.auctionId = auctionId;
         }
 
-        public int getId()        { return id; }
-        public String getName()   { return name; }
-        public String getType()   { return type; }
-        public String getPrice()  { return price; }
-        public String getStatus() { return status; }
-        public int getAuctionId() { return auctionId; }
+        public int    getId()        { return id; }
+        public String getName()      { return name; }
+        public String getType()      { return type; }
+        public String getPrice()     { return price; }
+        public String getStatus()    { return status; }
+        public int    getAuctionId() { return auctionId; }
     }
 }
