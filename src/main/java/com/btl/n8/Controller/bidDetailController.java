@@ -2,8 +2,8 @@ package com.btl.n8.Controller;
 
 import com.btl.n8.Connection.*;
 import com.btl.n8.Model.*;
-import com.btl.n8.service.AuctionService;
-import com.btl.n8.service.BidService;
+import com.btl.n8.Service.AuctionService;
+import com.btl.n8.Service.BidService;
 
 import javafx.application.Platform;
 import javafx.fxml.FXML;
@@ -13,7 +13,6 @@ import javafx.scene.chart.NumberAxis;
 import javafx.scene.chart.XYChart;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
-import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.stage.Stage;
 

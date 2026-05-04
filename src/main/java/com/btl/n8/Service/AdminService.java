@@ -1,8 +1,7 @@
-package com.btl.n8.service;
+package com.btl.n8.Service;
 
 import com.btl.n8.Connection.UserDAO;
 import com.btl.n8.Model.Admin;
-import com.btl.n8.Model.Bidder;
 import com.btl.n8.Model.User;
 import com.btl.n8.Model.Role;
 

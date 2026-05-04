@@ -66,7 +66,7 @@ public class bidController {
     private void openBidPopup(ItemRow row) {
         try {
             FXMLLoader loader = new FXMLLoader(
-                    getClass().getResource("/fxml/bidDetail.fxml"));
+                    getClass().getResource("/fxml/bidDetails.fxml"));
             Parent root = loader.load();
 
             // Lấy item thực từ DB

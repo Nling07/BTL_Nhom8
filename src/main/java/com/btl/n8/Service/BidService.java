@@ -1,4 +1,4 @@
-package com.btl.n8.service;
+package com.btl.n8.Service;
 
 import com.btl.n8.Connection.BidDAO;
 import com.btl.n8.Model.Bid;
