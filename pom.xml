@@ -4,8 +4,8 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.example</groupId>
-    <artifactId>BTL_Nhom8</artifactId>
+    <groupId>com.btl</groupId>
+    <artifactId>n8</artifactId>
     <version>1.0-SNAPSHOT</version>
     <name>BTL_Nhom8</name>
 
@@ -20,6 +20,7 @@
             <artifactId>gson</artifactId>
             <version>2.11.0</version>
         </dependency>
+
         <dependency>
             <groupId>org.openjfx</groupId>
             <artifactId>javafx-controls</artifactId>
@@ -70,7 +71,7 @@
                         <!-- Default configuration for running with: mvn clean javafx:run -->
                         <id>default-cli</id>
                         <configuration>
-                            <mainClass>com.example.btl_nhom8/com.example.btl_nhom8.HelloApplication</mainClass>
+                            <mainClass>com.btl.n8/com.btl.n8.Main</mainClass>
                             <launcher>app</launcher>
                             <jlinkZipName>app</jlinkZipName>
                             <jlinkImageName>app</jlinkImageName>
