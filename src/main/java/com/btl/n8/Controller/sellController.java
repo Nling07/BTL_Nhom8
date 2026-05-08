@@ -4,6 +4,7 @@ import com.btl.n8.Connection.*;
 import com.btl.n8.Model.*;
 import com.btl.n8.Service.AuctionService;
 import com.btl.n8.Service.ItemService;
+import com.btl.n8.Service.FileUtils;
 
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
@@ -124,6 +125,11 @@ public class sellController {
             return;
         }
 
+        if (selectedImage == null) {
+            messageLabel.setText("Please select an image");
+            return;
+        }
+
         BigDecimal startingPrice;
         try {
             startingPrice = new BigDecimal(priceText);
@@ -140,12 +146,22 @@ public class sellController {
 
         new Thread(() -> {
             try {
-                // Tạo item đúng loại
+                // Chuyển đổi ảnh thành byte array
+                byte[] imageBytes = FileUtils.toByteArray(selectedImage);
+                if (imageBytes == null) {
+                    Platform.runLater(() -> {
+                        messageLabel.setText("Error reading image file");
+                        ((Button)event.getSource()).setDisable(false);
+                    });
+                    return;
+                }
+
+                // Tạo item đúng loại và truyền ảnh
                 ItemType itemType = ItemType.valueOf(type);
                 Item item = switch (itemType) {
-                    case POSTER -> new Poster(0, name, sellerId);
-                    case FIGURE -> new Figure(0, name, sellerId);
-                    case CARD   -> new Card(0, name, sellerId);
+                    case POSTER -> new Poster(name, sellerId, imageBytes);
+                    case FIGURE -> new Figure(name, sellerId, imageBytes);
+                    case CARD   -> new Card(name, sellerId, imageBytes);
                 };
 
                 // Dùng ItemService để insert
@@ -193,7 +209,7 @@ public class sellController {
 
             } catch (Exception e) {
                 Platform.runLater(() -> {
-                    messageLabel.setText("Error");
+                    messageLabel.setText("Error: " + e.getMessage());
                     ((Button)event.getSource()).setDisable(false);
                 });
                 e.printStackTrace();

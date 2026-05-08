@@ -1,7 +1,6 @@
 package com.btl.n8.Connection;
 
 import com.btl.n8.Model.*;
-
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -15,12 +14,13 @@ public class ItemDAOImpl implements ItemDAO {
 
     @Override
     public boolean insert(Item item) {
-        String sql = "INSERT INTO items(name, seller_id, type) VALUES (?, ?, ?)";
+        String sql = "INSERT INTO items(name, seller_id, type, image) VALUES (?, ?, ?, ?)";
 
         try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setString(1, item.getName());
             ps.setInt(2, item.getSellerId());
             ps.setString(3, item.getType().name());
+            ps.setBytes(4, item.getImage()); // thêm ảnh
 
             int rows = ps.executeUpdate();
 
@@ -103,17 +103,18 @@ public class ItemDAOImpl implements ItemDAO {
         int id = rs.getInt("item_id");
         String name = rs.getString("name");
         int sellerId = rs.getInt("seller_id");
-
         String typeStr = rs.getString("type");
         ItemType type = ItemType.valueOf(typeStr);
 
+        byte[] image = rs.getBytes("image"); // đọc ảnh từ DB
+
         switch (type) {
             case POSTER:
-                return new Poster(id, name, sellerId);
+                return new Poster(id, name, sellerId, image);
             case FIGURE:
-                return new Figure(id, name, sellerId);
+                return new Figure(id, name, sellerId, image);
             case CARD:
-                return new Card(id, name, sellerId);
+                return new Card(id, name, sellerId, image);
         }
 
         return null;
