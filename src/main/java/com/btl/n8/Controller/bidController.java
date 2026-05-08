@@ -70,31 +70,31 @@ public class bidController {
             Parent root = loader.load();
 
             // Lấy item thực từ DB
-            Connection conn = DataConnection.getConnection();
-            ItemDAO itemDAO = new ItemDAOImpl(conn);
-            Item item = itemDAO.findById(row.getId());
+            try (Connection conn = DataConnection.getConnection()) {
+                ItemDAO itemDAO = new ItemDAOImpl(conn);
+                Item item = itemDAO.findById(row.getId());
 
-            // Truyền data vào controller popup
-            bidDetailController controller = loader.getController();
-            controller.initData(row.getAuctionId(), item);
+                // Truyền data vào controller popup
+                bidDetailController controller = loader.getController();
+                controller.initData(row.getAuctionId(), item);
 
-            // Tạo popup stage đè lên màn hình bid
-            Stage popup = new Stage();
-            popup.setTitle("Bid - " + row.getName());
-            popup.setScene(new Scene(root));
-            popup.initModality(Modality.APPLICATION_MODAL);
-            popup.setResizable(false);
-            popup.show();
-
+                // Tạo popup stage đè lên màn hình bid
+                Stage popup = new Stage();
+                popup.setTitle("Bid - " + row.getName());
+                popup.setScene(new Scene(root));
+                popup.initModality(Modality.APPLICATION_MODAL);
+                popup.setResizable(false);
+                popup.show();
+            }
         } catch (Exception ex) {
             ex.printStackTrace();
+            // Show error dialog
         }
     }
 
     private void loadData() {
         new Thread(() -> {
-            try {
-                Connection conn = DataConnection.getConnection();
+            try (Connection conn = DataConnection.getConnection()) {
                 ItemDAO itemDAO       = new ItemDAOImpl(conn);
                 AuctionDAO auctionDAO = new AuctionDAOImpl(conn);
 
@@ -119,7 +119,10 @@ public class bidController {
                 Platform.runLater(() -> itemTable.setItems(allItems));
 
             } catch (Exception e) {
-                e.printStackTrace();
+                Platform.runLater(() -> {
+                    // Show error message, e.g., Alert
+                    System.err.println("Failed to load items: " + e.getMessage());
+                });
             }
         }).start();
     }

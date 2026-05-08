@@ -46,5 +46,6 @@
             <Font name="Press Start 2P" size="11.0" />
          </font>
       </Label>
+      <Button layoutX="850.0" layoutY="450.0" mnemonicParsing="false" onAction="#logout" prefHeight="25.0" prefWidth="100.0" text="Logout" />
    </children>
 </AnchorPane>

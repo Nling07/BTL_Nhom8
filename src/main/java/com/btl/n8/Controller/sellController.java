@@ -44,13 +44,14 @@ public class sellController {
 
     private File selectedImage;
     private ObservableList<SellRow> myItems = FXCollections.observableArrayList();
-    private int sellerId = 1;
+    private int sellerId;
 
     private ItemService itemService;
     private AuctionService auctionService;
 
     @FXML
     public void initialize() {
+        sellerId = SessionManager.getCurrentUser().getId();
         typeCombo.setItems(FXCollections.observableArrayList("POSTER", "FIGURE", "CARD"));
 
         colId.setCellValueFactory(new PropertyValueFactory<>("id"));
@@ -63,13 +64,16 @@ public class sellController {
         myItemTable.setItems(myItems);
 
         new Thread(() -> {
-            try {
-                Connection conn = DataConnection.getConnection();
+            try (Connection conn = DataConnection.getConnection()) {
                 itemService    = new ItemService(new ItemDAOImpl(conn));
                 auctionService = new AuctionService(new AuctionDAOImpl(conn));
 
                 Platform.runLater(() -> loadMyItems());
             } catch (Exception e) {
+                Platform.runLater(() -> {
+                    messageLabel.setText("Failed to load data");
+                    messageLabel.setVisible(true);
+                });
                 e.printStackTrace();
             }
         }).start();
@@ -248,3 +252,4 @@ public class sellController {
         public String getStatus()       { return status; }
     }
 }
+
