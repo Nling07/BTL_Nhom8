@@ -12,11 +12,11 @@ public abstract class DataConnection {
 
     public static Connection getConnection(){
         try{
-            if (conn == null){
+            if (conn == null || conn.isClosed()){
                 String url = "jdbc:mysql://10.228.45.83:3306/pokemon_db";
                 String user = "member1";
                 String password = "123456";
-                Connection conn = DriverManager.getConnection(url, user, password);
+                conn = DriverManager.getConnection(url, user, password);
             }
             return conn;
         }
