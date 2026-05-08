@@ -19,9 +19,11 @@ public class accounthomeController {
     public void initialize() {
         User user = SessionManager.getCurrentUser();
         if (user != null) {
-            userInfoLabel.setText("Welcome, " + user.getAccount() + " (" + user.getRole() + ")");
+            String userInfo = String.format("Welcome, %s\nRole: %s\nID: %d",
+                    user.getAccount(), user.getRole(), user.getId());
+            userInfoLabel.setText(userInfo);
         } else {
-            userInfoLabel.setText("Not logged in");
+            userInfoLabel.setText("Error: User not logged in");
         }
     }
 

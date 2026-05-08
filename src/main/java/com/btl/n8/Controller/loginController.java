@@ -36,8 +36,13 @@ public class loginController {
         String username = usernameField.getText().trim();
         String password = passwordField.getText().trim();
 
-        if (username.isEmpty() || password.isEmpty()) {
-            messageLabel.setText("Please enter username and password");
+        if (username.isEmpty()) {
+            messageLabel.setText("Please enter username");
+            messageLabel.setVisible(true);
+            return;
+        }
+        if (password.isEmpty()) {
+            messageLabel.setText("Please enter password");
             messageLabel.setVisible(true);
             return;
         }
@@ -46,6 +51,9 @@ public class loginController {
             @Override
             protected User call() throws Exception {
                 try (Connection conn = DataConnection.getConnection()) {
+                    if (conn == null) {
+                        throw new Exception("Database connection failed");
+                    }
                     UserDAOImpl userDAO = new UserDAOImpl(conn);
                     User user = userDAO.findByAccount(username);
                     if (user != null && user.getPassword().equals(password)) {
@@ -75,7 +83,7 @@ public class loginController {
         loginTask.setOnFailed(e -> {
             Platform.runLater(() -> {
                 Throwable exception = loginTask.getException();
-                messageLabel.setText(exception.getMessage() != null ? exception.getMessage() : "Login failed. Please try again.");
+                messageLabel.setText(exception.getMessage() != null ? exception.getMessage() : "Login failed");
                 messageLabel.setVisible(true);
             });
         });

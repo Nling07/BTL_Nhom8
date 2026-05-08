@@ -74,6 +74,11 @@ public class bidController {
                 ItemDAO itemDAO = new ItemDAOImpl(conn);
                 Item item = itemDAO.findById(row.getId());
 
+                if (item == null) {
+                    showError("Item not found");
+                    return;
+                }
+
                 // Truyền data vào controller popup
                 bidDetailController controller = loader.getController();
                 controller.initData(row.getAuctionId(), item);
@@ -87,14 +92,24 @@ public class bidController {
                 popup.show();
             }
         } catch (Exception ex) {
+            showError("Failed to open auction: " + ex.getMessage());
             ex.printStackTrace();
-            // Show error dialog
         }
+    }
+
+    private void showError(String message) {
+        Alert alert = new Alert(Alert.AlertType.ERROR);
+        alert.setTitle("Error");
+        alert.setContentText(message);
+        alert.showAndWait();
     }
 
     private void loadData() {
         new Thread(() -> {
             try (Connection conn = DataConnection.getConnection()) {
+                if (conn == null) {
+                    throw new Exception("Failed to connect to database");
+                }
                 ItemDAO itemDAO       = new ItemDAOImpl(conn);
                 AuctionDAO auctionDAO = new AuctionDAOImpl(conn);
 
@@ -120,12 +135,12 @@ public class bidController {
 
             } catch (Exception e) {
                 Platform.runLater(() -> {
-                    // Show error message, e.g., Alert
-                    System.err.println("Failed to load items: " + e.getMessage());
+                    showError("Failed to load items: " + e.getMessage());
                 });
             }
         }).start();
     }
+
 
     @FXML
     public void handleSearch(ActionEvent event) {

@@ -40,7 +40,7 @@ public class bidDetailController {
     @FXML private NumberAxis yAxis;
 
     private int auctionId;
-    private int bidderId = 1; // TODO: truyền từ session
+    private int bidderId;
     private Auction auction;
     private Timer countdownTimer;
 
@@ -50,13 +50,15 @@ public class bidDetailController {
     // Gọi từ bidController sau khi load fxml
     public void initData(int auctionId, Item item) {
         this.auctionId = auctionId;
+        this.bidderId = SessionManager.getCurrentUser().getId();
 
-        try {
-            Connection conn = DataConnection.getConnection();
+        try (Connection conn = DataConnection.getConnection()) {
             auctionService = new AuctionService(new AuctionDAOImpl(conn));
             bidService     = new BidService(new BidDAOImpl(conn));
             auction        = auctionService.getAuctionById(auctionId);
         } catch (Exception e) {
+            bidMsg.setText("Failed to load data. Please try again.");
+            bidMsg.setVisible(true);
             e.printStackTrace();
             return;
         }
@@ -109,25 +111,34 @@ public class bidDetailController {
         String text = bidInput.getText().trim();
 
         if (text.isEmpty()) {
-            showMsg("Please enter a bid", false);
+            showMsg("Please enter a bid amount", false);
             return;
         }
 
         BigDecimal amount;
         try {
             amount = new BigDecimal(text);
+            if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+                showMsg("Amount must be positive", false);
+                return;
+            }
         } catch (NumberFormatException e) {
-            showMsg("Invalid amount", false);
+            showMsg("Invalid amount format", false);
             return;
         }
 
-        if (auction == null || auction.getStatus() != AuctionStatus.OPEN) {
-            showMsg("Auction is not open", false);
+        if (auction == null) {
+            showMsg("Auction not available", false);
+            return;
+        }
+
+        if (auction.getStatus() != AuctionStatus.OPEN) {
+            showMsg("Auction is not open for bidding", false);
             return;
         }
 
         if (amount.compareTo(auction.getCurrentPrice()) <= 0) {
-            showMsg("Bid must be higher than current price", false);
+            showMsg("Bid must be higher than " + fmt(auction.getCurrentPrice()), false);
             return;
         }
 

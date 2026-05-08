@@ -12,15 +12,7 @@ public class homeController {
     @FXML
     public void initialize() {
         if (!SessionManager.isLoggedIn()) {
-            // Redirect to login if not logged in
-            try {
-                Parent root = FXMLLoader.load(getClass().getResource("/fxml/login.fxml"));
-                Stage stage = new Stage(); // Or get current stage
-                stage.setScene(new Scene(root));
-                stage.show();
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
+            System.out.println("Warning: User not logged in!");
         }
     }
 

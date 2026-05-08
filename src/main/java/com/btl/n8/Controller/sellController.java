@@ -119,18 +119,27 @@ public class sellController {
     @FXML
     public void handleSell(ActionEvent event) {
         messageLabel.setText("");
+        messageLabel.setStyle("");
 
         String name      = nameField.getText().trim();
         String type      = typeCombo.getValue();
         String priceText = priceField.getText().trim();
 
-        if (name.isEmpty() || type == null || priceText.isEmpty()) {
-            messageLabel.setText("Please enter full info");
+        // Validation
+        if (name.isEmpty()) {
+            showError("Please enter item name");
             return;
         }
-
+        if (type == null) {
+            showError("Please select item type");
+            return;
+        }
+        if (priceText.isEmpty()) {
+            showError("Please enter starting price");
+            return;
+        }
         if (selectedImage == null) {
-            messageLabel.setText("Please select an image");
+            showError("Please select an image");
             return;
         }
 
@@ -138,15 +147,16 @@ public class sellController {
         try {
             startingPrice = new BigDecimal(priceText);
             if (startingPrice.compareTo(BigDecimal.ZERO) <= 0) {
-                messageLabel.setText("Invalid Price");
+                showError("Price must be greater than 0");
                 return;
             }
         } catch (NumberFormatException e) {
-            messageLabel.setText("Invalid Price");
+            showError("Invalid price format");
             return;
         }
 
-        ((Button)event.getSource()).setDisable(true);
+        Button submitBtn = (Button)event.getSource();
+        submitBtn.setDisable(true);
 
         new Thread(() -> {
             try {
@@ -154,8 +164,8 @@ public class sellController {
                 byte[] imageBytes = FileUtils.toByteArray(selectedImage);
                 if (imageBytes == null) {
                     Platform.runLater(() -> {
-                        messageLabel.setText("Error reading image file");
-                        ((Button)event.getSource()).setDisable(false);
+                        showError("Error reading image file");
+                        submitBtn.setDisable(false);
                     });
                     return;
                 }
@@ -172,8 +182,8 @@ public class sellController {
                 boolean itemOk = itemService.addItem(item);
                 if (!itemOk) {
                     Platform.runLater(() -> {
-                        messageLabel.setText("Error when creating item");
-                        ((Button)event.getSource()).setDisable(false);
+                        showError("Failed to create item");
+                        submitBtn.setDisable(false);
                     });
                     return;
                 }
@@ -193,8 +203,8 @@ public class sellController {
                 boolean auctionOk = auctionService.createAuction(auction);
                 if (!auctionOk) {
                     Platform.runLater(() -> {
-                        messageLabel.setText("Auction can't create");
-                        ((Button)event.getSource()).setDisable(false);
+                        showError("Failed to create auction");
+                        submitBtn.setDisable(false);
                     });
                     return;
                 }
@@ -205,20 +215,29 @@ public class sellController {
                     priceField.clear();
                     uploadLabel.setText("");
                     selectedImage = null;
-                    messageLabel.setStyle("-fx-text-fill: green;");
-                    messageLabel.setText("Success");
-                    ((Button)event.getSource()).setDisable(false);
+                    showSuccess("Item listed successfully!");
+                    submitBtn.setDisable(false);
                     loadMyItems();
                 });
 
             } catch (Exception e) {
                 Platform.runLater(() -> {
-                    messageLabel.setText("Error: " + e.getMessage());
-                    ((Button)event.getSource()).setDisable(false);
+                    showError("Error: " + e.getMessage());
+                    submitBtn.setDisable(false);
                 });
                 e.printStackTrace();
             }
         }).start();
+    }
+
+    private void showError(String message) {
+        messageLabel.setStyle("-fx-text-fill: #A32D2D;");
+        messageLabel.setText(message);
+    }
+
+    private void showSuccess(String message) {
+        messageLabel.setStyle("-fx-text-fill: #3B6D11;");
+        messageLabel.setText(message);
     }
 
     @FXML

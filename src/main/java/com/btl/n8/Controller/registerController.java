@@ -45,21 +45,29 @@ public class registerController {
         String password = passwordField.getText().trim();
         String rePassword = rePasswordField.getText().trim();
 
-        if (username.isEmpty() || password.isEmpty() || rePassword.isEmpty()) {
-            messageLabel.setText("Please fill all fields");
-            messageLabel.setVisible(true);
+        // Validation
+        if (username.isEmpty()) {
+            showError("Please enter username");
             return;
         }
-
+        if (username.length() < 3) {
+            showError("Username must be at least 3 characters");
+            return;
+        }
+        if (password.isEmpty()) {
+            showError("Please enter password");
+            return;
+        }
+        if (rePassword.isEmpty()) {
+            showError("Please confirm password");
+            return;
+        }
         if (!password.equals(rePassword)) {
-            messageLabel.setText("Passwords do not match");
-            messageLabel.setVisible(true);
+            showError("Passwords do not match");
             return;
         }
-
         if (password.length() < 6) {
-            messageLabel.setText("Password must be at least 6 characters");
-            messageLabel.setVisible(true);
+            showError("Password must be at least 6 characters");
             return;
         }
 
@@ -70,10 +78,13 @@ public class registerController {
             @Override
             protected Void call() throws Exception {
                 try (Connection conn = DataConnection.getConnection()) {
+                    if (conn == null) {
+                        throw new Exception("Database connection failed");
+                    }
                     UserDAOImpl userDAO = new UserDAOImpl(conn);
                     boolean success = userDAO.insert(user);
                     if (!success) {
-                        throw new Exception("Registration failed. Username may already exist.");
+                        throw new Exception("Username already exists");
                     }
                 }
                 return null;
@@ -93,12 +104,17 @@ public class registerController {
         registerTask.setOnFailed(e -> {
             Platform.runLater(() -> {
                 Throwable exception = registerTask.getException();
-                messageLabel.setText(exception.getMessage() != null ? exception.getMessage() : "Registration failed. Please try again.");
+                messageLabel.setText(exception.getMessage() != null ? exception.getMessage() : "Registration failed");
                 messageLabel.setVisible(true);
             });
         });
 
         new Thread(registerTask).start();
+    }
+
+    private void showError(String message) {
+        messageLabel.setText(message);
+        messageLabel.setVisible(true);
     }
 
     public void goLogin(ActionEvent event) throws Exception {
