@@ -5,7 +5,7 @@ module com.example.btl_nhom8 {
 
     requires java.sql;
     requires mysql.connector.j;
-
+    requires com.google.gson;
     opens com.btl.n8 to javafx.fxml;
     exports com.btl.n8;
     exports com.btl.n8.Controller;
