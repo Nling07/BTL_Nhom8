@@ -3,8 +3,8 @@ package com.btl.n8.Controller;
 import com.btl.n8.Connection.*;
 import com.btl.n8.Model.*;
 import com.btl.n8.Service.AuctionService;
-import com.btl.n8.Service.ItemService;
 import com.btl.n8.Service.FileUtils;
+import com.btl.n8.Service.ItemService;
 
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
@@ -64,16 +64,16 @@ public class sellController {
         myItemTable.setItems(myItems);
 
         new Thread(() -> {
-            try (Connection conn = DataConnection.getConnection()) {
+            try {
+                Connection conn = DataConnection.getConnection();
+                if (conn == null) throw new Exception("Database connection failed");
+
                 itemService    = new ItemService(new ItemDAOImpl(conn));
                 auctionService = new AuctionService(new AuctionDAOImpl(conn));
 
                 Platform.runLater(() -> loadMyItems());
             } catch (Exception e) {
-                Platform.runLater(() -> {
-                    messageLabel.setText("Failed to load data");
-                    messageLabel.setVisible(true);
-                });
+                Platform.runLater(() -> showError("Failed to load data"));
                 e.printStackTrace();
             }
         }).start();
@@ -112,7 +112,7 @@ public class sellController {
         selectedImage = fc.showOpenDialog(stage);
 
         if (selectedImage != null) {
-            uploadLabel.setText("ok " + selectedImage.getName());
+            uploadLabel.setText("✓ " + selectedImage.getName());
         }
     }
 
@@ -125,23 +125,10 @@ public class sellController {
         String type      = typeCombo.getValue();
         String priceText = priceField.getText().trim();
 
-        // Validation
-        if (name.isEmpty()) {
-            showError("Please enter item name");
-            return;
-        }
-        if (type == null) {
-            showError("Please select item type");
-            return;
-        }
-        if (priceText.isEmpty()) {
-            showError("Please enter starting price");
-            return;
-        }
-        if (selectedImage == null) {
-            showError("Please select an image");
-            return;
-        }
+        if (name.isEmpty())           { showError("Please enter item name"); return; }
+        if (type == null)             { showError("Please select item type"); return; }
+        if (priceText.isEmpty())      { showError("Please enter starting price"); return; }
+        if (selectedImage == null)    { showError("Please select an image"); return; }
 
         BigDecimal startingPrice;
         try {
@@ -155,12 +142,12 @@ public class sellController {
             return;
         }
 
-        Button submitBtn = (Button)event.getSource();
+        Button submitBtn = (Button) event.getSource();
         submitBtn.setDisable(true);
 
         new Thread(() -> {
             try {
-                // Chuyển đổi ảnh thành byte array
+                // FileUtils đọc ảnh
                 byte[] imageBytes = FileUtils.toByteArray(selectedImage);
                 if (imageBytes == null) {
                     Platform.runLater(() -> {
@@ -170,15 +157,8 @@ public class sellController {
                     return;
                 }
 
-                // Tạo item đúng loại và truyền ảnh
-                ItemType itemType = ItemType.valueOf(type);
-                Item item = switch (itemType) {
-                    case POSTER -> new Poster(name, sellerId, imageBytes);
-                    case FIGURE -> new Figure(name, sellerId, imageBytes);
-                    case CARD   -> new Card(name, sellerId, imageBytes);
-                };
-
-                // Dùng ItemService để insert
+                // ItemService tạo và insert item — controller không cần biết logic bên trong
+                Item item = itemService.createItem(name, type, sellerId, imageBytes);
                 boolean itemOk = itemService.addItem(item);
                 if (!itemOk) {
                     Platform.runLater(() -> {
@@ -188,7 +168,7 @@ public class sellController {
                     return;
                 }
 
-                // Tính thời gian: start = now, end = now + 2 ngày
+                // AuctionService tạo auction — start = now, end = now + 2 ngày
                 LocalDateTime startTime = LocalDateTime.now();
                 LocalDateTime endTime   = startTime.plusDays(2);
 
@@ -199,7 +179,6 @@ public class sellController {
                         AuctionStatus.OPEN
                 );
 
-                // Dùng AuctionService để insert
                 boolean auctionOk = auctionService.createAuction(auction);
                 if (!auctionOk) {
                     Platform.runLater(() -> {
@@ -231,12 +210,12 @@ public class sellController {
     }
 
     private void showError(String message) {
-        messageLabel.setStyle("-fx-text-fill: #A32D2D;");
+        messageLabel.setStyle("-fx-text-fill: #ff6b6b;");
         messageLabel.setText(message);
     }
 
     private void showSuccess(String message) {
-        messageLabel.setStyle("-fx-text-fill: #3B6D11;");
+        messageLabel.setStyle("-fx-text-fill: #00ff88;");
         messageLabel.setText(message);
     }
 
@@ -271,4 +250,3 @@ public class sellController {
         public String getStatus()       { return status; }
     }
 }
-

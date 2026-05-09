@@ -3,7 +3,9 @@ package com.btl.n8.Controller;
 import com.btl.n8.Model.User;
 
 public class SessionManager {
-    private static User currentUser;
+    private static volatile User currentUser;
+
+    private SessionManager() {}
 
     public static void setCurrentUser(User user) {
         currentUser = user;

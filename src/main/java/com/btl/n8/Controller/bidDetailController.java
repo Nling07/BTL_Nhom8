@@ -47,36 +47,33 @@ public class bidDetailController {
     private AuctionService auctionService;
     private BidService bidService;
 
-    // Gọi từ bidController sau khi load fxml
     public void initData(int auctionId, Item item) {
         this.auctionId = auctionId;
-        this.bidderId = SessionManager.getCurrentUser().getId();
+        this.bidderId  = SessionManager.getCurrentUser().getId();
 
-        try (Connection conn = DataConnection.getConnection()) {
+        // FIX: không dùng try-with-resources, giữ conn sống cho các lần gọi sau
+        try {
+            Connection conn = DataConnection.getConnection();
+            if (conn == null) throw new Exception("Database connection failed");
+
             auctionService = new AuctionService(new AuctionDAOImpl(conn));
             bidService     = new BidService(new BidDAOImpl(conn));
             auction        = auctionService.getAuctionById(auctionId);
+
         } catch (Exception e) {
-            bidMsg.setText("Failed to load data. Please try again.");
-            bidMsg.setVisible(true);
+            showMsg("Failed to load data. Please try again.", false);
             e.printStackTrace();
             return;
         }
 
-        // Điền thông tin item
         itemName.setText(item.getName());
         itemId.setText("#" + item.getId());
         itemType.setText(item.getType().name());
         itemStatus.setText(auction != null ? auction.getStatus().name() : "-");
         currentPrice.setText(fmt(auction != null ? auction.getCurrentPrice() : BigDecimal.ZERO));
 
-        // Load ảnh nếu có
-        // itemImage.setImage(new Image("file:path/to/image.png"));
-
-        // Load chart
         loadChart();
 
-        // Bắt countdown timer
         if (auction != null) startCountdown(auction.getEndTime());
     }
 
@@ -89,7 +86,6 @@ public class bidDetailController {
 
             DateTimeFormatter fmt = DateTimeFormatter.ofPattern("HH:mm");
 
-            // Reverse vì DB trả về DESC
             for (int i = bids.size() - 1; i >= 0; i--) {
                 Bid bid = bids.get(i);
                 series.getData().add(new XYChart.Data<>(
@@ -110,10 +106,7 @@ public class bidDetailController {
         bidMsg.setText("");
         String text = bidInput.getText().trim();
 
-        if (text.isEmpty()) {
-            showMsg("Please enter a bid amount", false);
-            return;
-        }
+        if (text.isEmpty())              { showMsg("Please enter a bid amount", false); return; }
 
         BigDecimal amount;
         try {
@@ -127,31 +120,25 @@ public class bidDetailController {
             return;
         }
 
-        if (auction == null) {
-            showMsg("Auction not available", false);
-            return;
-        }
-
-        if (auction.getStatus() != AuctionStatus.OPEN) {
-            showMsg("Auction is not open for bidding", false);
-            return;
-        }
-
+        if (auction == null)                             { showMsg("Auction not available", false); return; }
+        if (auction.getStatus() != AuctionStatus.OPEN)  { showMsg("Auction is not open", false); return; }
         if (amount.compareTo(auction.getCurrentPrice()) <= 0) {
             showMsg("Bid must be higher than " + fmt(auction.getCurrentPrice()), false);
             return;
         }
 
         new Thread(() -> {
+            // Dùng BidService.placeBid()
             boolean ok = bidService.placeBid(auctionId, bidderId, amount);
 
             Platform.runLater(() -> {
                 if (ok) {
+                    // Cập nhật lại auction từ AuctionService
                     auction = auctionService.getAuctionById(auctionId);
                     currentPrice.setText(fmt(auction.getCurrentPrice()));
                     bidInput.clear();
-                    showMsg("Bid placed", true);
-                    loadChart(); // cập nhật chart
+                    showMsg("Bid placed!", true);
+                    loadChart();
                 } else {
                     showMsg("Failed to place bid", false);
                 }
@@ -173,8 +160,8 @@ public class bidDetailController {
                 long h = diff / 3600;
                 long m = (diff % 3600) / 60;
                 long s = diff % 60;
-                String text = String.format("%02d:%02d:%02d", h, m, s);
-                Platform.runLater(() -> timerLabel.setText(text));
+                Platform.runLater(() ->
+                        timerLabel.setText(String.format("%02d:%02d:%02d", h, m, s)));
             }
         }, 0, 1000);
     }
@@ -188,10 +175,11 @@ public class bidDetailController {
 
     private void showMsg(String msg, boolean success) {
         bidMsg.setStyle(success
-                ? "-fx-text-fill: #3B6D11; -fx-font-size: 12px;"
-                : "-fx-text-fill: #A32D2D; -fx-font-size: 12px;");
+                ? "-fx-text-fill: #00ff88; -fx-font-size: 12px;"
+                : "-fx-text-fill: #ff6b6b; -fx-font-size: 12px;");
         bidMsg.setText(msg);
     }
+
     private String fmt(BigDecimal n) {
         return String.format("%,.0f ₫", n);
     }

@@ -2,6 +2,8 @@ package com.btl.n8.Controller;
 
 import com.btl.n8.Connection.*;
 import com.btl.n8.Model.*;
+import com.btl.n8.Service.AuctionService;
+import com.btl.n8.Service.ItemService;
 
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
@@ -33,6 +35,9 @@ public class bidController {
     @FXML private TableColumn<ItemRow, Void>    colAction;
 
     private ObservableList<ItemRow> allItems = FXCollections.observableArrayList();
+
+    private ItemService itemService;
+    private AuctionService auctionService;
 
     @FXML
     public void initialize() {
@@ -69,54 +74,43 @@ public class bidController {
                     getClass().getResource("/fxml/bidDetails.fxml"));
             Parent root = loader.load();
 
-            // Lấy item thực từ DB
-            try (Connection conn = DataConnection.getConnection()) {
-                ItemDAO itemDAO = new ItemDAOImpl(conn);
-                Item item = itemDAO.findById(row.getId());
-
-                if (item == null) {
-                    showError("Item not found");
-                    return;
-                }
-
-                // Truyền data vào controller popup
-                bidDetailController controller = loader.getController();
-                controller.initData(row.getAuctionId(), item);
-
-                // Tạo popup stage đè lên màn hình bid
-                Stage popup = new Stage();
-                popup.setTitle("Bid - " + row.getName());
-                popup.setScene(new Scene(root));
-                popup.initModality(Modality.APPLICATION_MODAL);
-                popup.setResizable(false);
-                popup.show();
+            // Dùng ItemService thay vì DAO trực tiếp
+            Item item = itemService.getItemById(row.getId());
+            if (item == null) {
+                showError("Item not found");
+                return;
             }
+
+            bidDetailController controller = loader.getController();
+            controller.initData(row.getAuctionId(), item);
+
+            Stage popup = new Stage();
+            popup.setTitle("Bid - " + row.getName());
+            popup.setScene(new Scene(root));
+            popup.initModality(Modality.APPLICATION_MODAL);
+            popup.setResizable(false);
+            popup.show();
+
         } catch (Exception ex) {
             showError("Failed to open auction: " + ex.getMessage());
             ex.printStackTrace();
         }
     }
 
-    private void showError(String message) {
-        Alert alert = new Alert(Alert.AlertType.ERROR);
-        alert.setTitle("Error");
-        alert.setContentText(message);
-        alert.showAndWait();
-    }
-
     private void loadData() {
         new Thread(() -> {
-            try (Connection conn = DataConnection.getConnection()) {
-                if (conn == null) {
-                    throw new Exception("Failed to connect to database");
-                }
-                ItemDAO itemDAO       = new ItemDAOImpl(conn);
-                AuctionDAO auctionDAO = new AuctionDAOImpl(conn);
+            try {
+                Connection conn = DataConnection.getConnection();
+                if (conn == null) throw new Exception("Database connection failed");
 
-                List<Item> items = itemDAO.findAll();
+                // Dùng Service thay vì DAO trực tiếp
+                itemService    = new ItemService(new ItemDAOImpl(conn));
+                auctionService = new AuctionService(new AuctionDAOImpl(conn));
+
+                List<Item> items = itemService.getAllItems();
 
                 for (Item item : items) {
-                    Auction auction = auctionDAO.findByItemId(item.getId());
+                    Auction auction = auctionService.getAuctionByItemId(item.getId());
                     String price    = auction != null ? auction.getCurrentPrice().toPlainString() + " ₫" : "-";
                     String status   = auction != null ? auction.getStatus().name() : "NO AUCTION";
                     int auctionId   = auction != null ? auction.getId() : -1;
@@ -134,13 +128,11 @@ public class bidController {
                 Platform.runLater(() -> itemTable.setItems(allItems));
 
             } catch (Exception e) {
-                Platform.runLater(() -> {
-                    showError("Failed to load items: " + e.getMessage());
-                });
+                Platform.runLater(() -> showError("Failed to load items: " + e.getMessage()));
+                e.printStackTrace();
             }
         }).start();
     }
-
 
     @FXML
     public void handleSearch(ActionEvent event) {
@@ -164,6 +156,13 @@ public class bidController {
         }
 
         itemTable.setItems(filtered);
+    }
+
+    private void showError(String message) {
+        Alert alert = new Alert(Alert.AlertType.ERROR);
+        alert.setTitle("Error");
+        alert.setContentText(message);
+        alert.showAndWait();
     }
 
     @FXML

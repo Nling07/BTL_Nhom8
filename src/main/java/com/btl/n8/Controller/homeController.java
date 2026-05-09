@@ -12,7 +12,7 @@ public class homeController {
     @FXML
     public void initialize() {
         if (!SessionManager.isLoggedIn()) {
-            System.out.println("Warning: User not logged in!");
+            System.out.println("Warning: User not logged in");
         }
     }
 

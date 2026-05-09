@@ -1,8 +1,7 @@
 package com.btl.n8.Service;
 
 import com.btl.n8.Connection.ItemDAO;
-import com.btl.n8.Model.Item;
-import com.btl.n8.Model.ItemType;
+import com.btl.n8.Model.*;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -49,5 +48,14 @@ public class ItemService {
         return itemDAO.findBySeller(sellerId).stream()
                 .filter(i -> i.getType() == type)
                 .collect(Collectors.toList());
+    }
+    // Tạo item đúng loại — tách logic khỏi controller
+    public Item createItem(String name, String type, int sellerId, byte[] imageBytes) {
+        ItemType itemType = ItemType.valueOf(type);
+        return switch (itemType) {
+            case POSTER -> new Poster(name, sellerId, imageBytes);
+            case FIGURE -> new Figure(name, sellerId, imageBytes);
+            case CARD -> new Card(name, sellerId, imageBytes);
+        };
     }
 }

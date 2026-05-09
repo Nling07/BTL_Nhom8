@@ -1,6 +1,8 @@
 package com.btl.n8.Controller;
 
+import com.btl.n8.Model.Bidder;
 import com.btl.n8.Model.User;
+
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
@@ -12,18 +14,28 @@ import javafx.stage.Stage;
 
 public class accounthomeController {
 
-    @FXML
-    private Label userInfoLabel;
+    @FXML private Label usernameLabel;
+    @FXML private Label roleLabel;
+    @FXML private Label idLabel;
+    @FXML private Label balanceLabel;
 
     @FXML
     public void initialize() {
         User user = SessionManager.getCurrentUser();
-        if (user != null) {
-            String userInfo = String.format("Welcome, %s\nRole: %s\nID: %d",
-                    user.getAccount(), user.getRole(), user.getId());
-            userInfoLabel.setText(userInfo);
+        if (user == null) {
+            usernameLabel.setText("Error: Not logged in");
+            return;
+        }
+
+        usernameLabel.setText(user.getAccount());
+        roleLabel.setText(user.getRole().name());
+        idLabel.setText("#" + user.getId());
+
+        // Hiện balance nếu là Bidder
+        if (user instanceof Bidder bidder) {
+            balanceLabel.setText(String.format("%,.0f ₫", bidder.getBalance()));
         } else {
-            userInfoLabel.setText("Error: User not logged in");
+            balanceLabel.setText("-");
         }
     }
 
