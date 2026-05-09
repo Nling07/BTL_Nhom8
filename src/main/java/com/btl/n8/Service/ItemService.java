@@ -2,8 +2,10 @@ package com.btl.n8.Service;
 
 import com.btl.n8.Connection.ItemDAO;
 import com.btl.n8.Model.Item;
+import com.btl.n8.Model.ItemType;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 public class ItemService {
     private final ItemDAO itemDAO;
@@ -33,5 +35,19 @@ public class ItemService {
     // Lấy item theo seller
     public List<Item> getItemsBySeller(int sellerId) {
         return itemDAO.findBySeller(sellerId);
+    }
+
+    // Lấy tất cả item theo loại
+    public List<Item> getItemsByType(ItemType type) {
+        return itemDAO.findAll().stream()
+                .filter(i -> i.getType() == type)
+                .collect(Collectors.toList());
+    }
+
+    // Lấy item theo seller và loại
+    public List<Item> getItemsBySellerAndType(int sellerId, ItemType type) {
+        return itemDAO.findBySeller(sellerId).stream()
+                .filter(i -> i.getType() == type)
+                .collect(Collectors.toList());
     }
 }

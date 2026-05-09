@@ -1,4 +1,4 @@
-module com.example.btl_nhom8 {
+module com.btl.n8 {
 
     requires javafx.controls;
     requires javafx.fxml;
