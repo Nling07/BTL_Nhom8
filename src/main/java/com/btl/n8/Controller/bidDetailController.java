@@ -106,7 +106,7 @@ public class bidDetailController {
         bidMsg.setText("");
         String text = bidInput.getText().trim();
 
-        if (text.isEmpty())              { showMsg("Please enter a bid amount", false); return; }
+        if (text.isEmpty())     { showMsg("Please enter a bid amount", false); return; }
 
         BigDecimal amount;
         try {
@@ -120,7 +120,7 @@ public class bidDetailController {
             return;
         }
 
-        if (auction == null)                             { showMsg("Auction not available", false); return; }
+        if (auction == null)    { showMsg("Auction not available", false); return; }
         if (auction.getStatus() != AuctionStatus.OPEN)  { showMsg("Auction is not open", false); return; }
         if (amount.compareTo(auction.getCurrentPrice()) <= 0) {
             showMsg("Bid must be higher than " + fmt(auction.getCurrentPrice()), false);

@@ -102,8 +102,6 @@ public class bidController {
             try {
                 Connection conn = DataConnection.getConnection();
                 if (conn == null) throw new Exception("Database connection failed");
-
-                // Dùng Service thay vì DAO trực tiếp
                 itemService    = new ItemService(new ItemDAOImpl(conn));
                 auctionService = new AuctionService(new AuctionDAOImpl(conn));
 
