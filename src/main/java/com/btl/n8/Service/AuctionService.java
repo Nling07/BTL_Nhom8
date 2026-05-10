@@ -26,25 +26,21 @@ public class AuctionService {
     public boolean placeBid(int auctionId, BigDecimal newPrice) {
         Auction auction = auctionDAO.findById(auctionId);
         if (auction == null) return false;
-
         if (auction.getStatus() != AuctionStatus.OPEN) return false;
 
         LocalDateTime now = LocalDateTime.now();
         if (now.isBefore(auction.getStartTime()) || now.isAfter(auction.getEndTime())) {
             return false;
         }
-
         if (newPrice.compareTo(auction.getCurrentPrice()) <= 0) {
             return false;
         }
-
         return auctionDAO.updateCurrentPrice(auctionId, newPrice);
     }
 
     public boolean closeAuction(int auctionId) {
         Auction auction = auctionDAO.findById(auctionId);
         if (auction == null) return false;
-
         auction.setStatus(AuctionStatus.CLOSED);
         return auctionDAO.update(auction);
     }
@@ -52,7 +48,6 @@ public class AuctionService {
     public boolean cancelAuction(int auctionId) {
         Auction auction = auctionDAO.findById(auctionId);
         if (auction == null) return false;
-
         auction.setStatus(AuctionStatus.CANCELLED);
         return auctionDAO.update(auction);
     }
