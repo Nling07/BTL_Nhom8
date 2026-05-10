@@ -10,5 +10,11 @@ module com.btl.n8 {
     exports com.btl.n8;
     exports com.btl.n8.Controller;
     opens com.btl.n8.Controller to javafx.fxml;
+    exports com.btl.n8.dto;
+    exports com.btl.n8.network;
+    exports com.btl.n8.util;
+    exports com.btl.n8.Model;
+    exports com.btl.n8.Service;
+    exports com.btl.n8.Connection;
 
 }
