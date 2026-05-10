@@ -6,6 +6,7 @@ import com.btl.n8.Model.AuctionStatus;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 public class AuctionService {
     private final AuctionDAO auctionDAO;
@@ -62,5 +63,9 @@ public class AuctionService {
 
     public Auction getAuctionByItemId(int itemId) {
         return auctionDAO.findByItemId(itemId);
+    }
+
+    public List<Auction> getAllAuctions() {
+        return auctionDAO.findAll();
     }
 }

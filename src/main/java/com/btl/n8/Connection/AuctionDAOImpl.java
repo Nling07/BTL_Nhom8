@@ -6,6 +6,8 @@ import com.btl.n8.Model.AuctionStatus;
 import java.math.BigDecimal;
 import java.sql.*;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 public class AuctionDAOImpl implements AuctionDAO{
     private final Connection conn;
@@ -128,6 +130,25 @@ public class AuctionDAOImpl implements AuctionDAO{
         return false;
     }
 
+    @Override
+    public List<Auction> findAll() {
+        List<Auction> auctions = new ArrayList<>();
+        String sql = "SELECT * FROM auctions ORDER BY auction_id";
+
+        try (PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+
+            while (rs.next()) {
+                auctions.add(mapAuction(rs));
+            }
+
+        } catch (SQLException e) {
+            System.out.println("Lỗi SQL khi findAll auctions: " + e.getMessage());
+        }
+
+        return auctions;
+    }
+
     private Auction mapAuction(ResultSet rs) throws SQLException {
         int id = rs.getInt("auction_id");
         int itemId = rs.getInt("item_id");
@@ -143,4 +164,3 @@ public class AuctionDAOImpl implements AuctionDAO{
         return new Auction(id, itemId, startingPrice, currentPrice, startTime, endTime, status);
     }
 }
-
