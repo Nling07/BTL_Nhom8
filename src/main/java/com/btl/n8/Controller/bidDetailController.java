@@ -49,9 +49,8 @@ public class bidDetailController {
 
     public void initData(int auctionId, Item item) {
         this.auctionId = auctionId;
-        this.bidderId  = SessionManager.getCurrentUser().getId();
+        this.bidderId  = SessionManager.getInstance().getCurrentUser().getId();
 
-        // FIX: không dùng try-with-resources, giữ conn sống cho các lần gọi sau
         try {
             Connection conn = DataConnection.getConnection();
             if (conn == null) throw new Exception("Database connection failed");
@@ -73,17 +72,14 @@ public class bidDetailController {
         currentPrice.setText(fmt(auction != null ? auction.getCurrentPrice() : BigDecimal.ZERO));
 
         loadChart();
-
         if (auction != null) startCountdown(auction.getEndTime());
     }
 
     private void loadChart() {
         new Thread(() -> {
             List<Bid> bids = bidService.getBidsByAuction(auctionId);
-
             XYChart.Series<String, Number> series = new XYChart.Series<>();
             series.setName("Price");
-
             DateTimeFormatter fmt = DateTimeFormatter.ofPattern("HH:mm");
 
             for (int i = bids.size() - 1; i >= 0; i--) {
@@ -106,7 +102,7 @@ public class bidDetailController {
         bidMsg.setText("");
         String text = bidInput.getText().trim();
 
-        if (text.isEmpty())     { showMsg("Please enter a bid amount", false); return; }
+        if (text.isEmpty()) { showMsg("Please enter a bid amount", false); return; }
 
         BigDecimal amount;
         try {
@@ -120,7 +116,7 @@ public class bidDetailController {
             return;
         }
 
-        if (auction == null)    { showMsg("Auction not available", false); return; }
+        if (auction == null)                            { showMsg("Auction not available", false); return; }
         if (auction.getStatus() != AuctionStatus.OPEN)  { showMsg("Auction is not open", false); return; }
         if (amount.compareTo(auction.getCurrentPrice()) <= 0) {
             showMsg("Bid must be higher than " + fmt(auction.getCurrentPrice()), false);
@@ -128,12 +124,9 @@ public class bidDetailController {
         }
 
         new Thread(() -> {
-            // Dùng BidService.placeBid()
             boolean ok = bidService.placeBid(auctionId, bidderId, amount);
-
             Platform.runLater(() -> {
                 if (ok) {
-                    // Cập nhật lại auction từ AuctionService
                     auction = auctionService.getAuctionById(auctionId);
                     currentPrice.setText(fmt(auction.getCurrentPrice()));
                     bidInput.clear();

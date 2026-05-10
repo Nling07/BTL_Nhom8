@@ -3,8 +3,8 @@ package com.btl.n8.Controller;
 import com.btl.n8.Connection.*;
 import com.btl.n8.Model.*;
 import com.btl.n8.Service.AuctionService;
-import com.btl.n8.Service.ItemService;
 import com.btl.n8.util.FileUtils;
+import com.btl.n8.Service.ItemService;
 
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
@@ -24,6 +24,7 @@ import java.io.File;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 public class sellController {
@@ -51,7 +52,7 @@ public class sellController {
 
     @FXML
     public void initialize() {
-        sellerId = SessionManager.getCurrentUser().getId();
+        sellerId = SessionManager.getInstance().getCurrentUser().getId();
         typeCombo.setItems(FXCollections.observableArrayList("POSTER", "FIGURE", "CARD"));
 
         colId.setCellValueFactory(new PropertyValueFactory<>("id"));
@@ -71,7 +72,14 @@ public class sellController {
                 itemService    = new ItemService(new ItemDAOImpl(conn));
                 auctionService = new AuctionService(new AuctionDAOImpl(conn));
 
-                Platform.runLater(() -> loadMyItems());
+                List<Item> items = itemService.getItemsBySeller(sellerId);
+                List<SellRow> rows = buildRows(items);
+
+                Platform.runLater(() -> {
+                    myItems.clear();
+                    myItems.addAll(rows);
+                });
+
             } catch (Exception e) {
                 Platform.runLater(() -> showError("Failed to load data"));
                 e.printStackTrace();
@@ -79,25 +87,32 @@ public class sellController {
         }).start();
     }
 
-    private void loadMyItems() {
-        myItems.clear();
-        List<Item> items = itemService.getItemsBySeller(sellerId);
-
+    // Helper — build rows trên background thread
+    private List<SellRow> buildRows(List<Item> items) {
+        List<SellRow> rows = new ArrayList<>();
         for (Item item : items) {
             Auction auction     = auctionService.getAuctionByItemId(item.getId());
             String startPrice   = auction != null ? fmt(auction.getStartingPrice()) : "-";
             String currentPrice = auction != null ? fmt(auction.getCurrentPrice())  : "-";
             String status       = auction != null ? auction.getStatus().name()      : "NO AUCTION";
-
-            myItems.add(new SellRow(
-                    item.getId(),
-                    item.getName(),
-                    item.getType().name(),
-                    startPrice,
-                    currentPrice,
-                    status
+            rows.add(new SellRow(
+                    item.getId(), item.getName(), item.getType().name(),
+                    startPrice, currentPrice, status
             ));
         }
+        return rows;
+    }
+
+    // Reload bảng sau khi đăng item — chạy trên background thread
+    private void reloadTable() {
+        new Thread(() -> {
+            List<Item> items = itemService.getItemsBySeller(sellerId);
+            List<SellRow> rows = buildRows(items);
+            Platform.runLater(() -> {
+                myItems.clear();
+                myItems.addAll(rows);
+            });
+        }).start();
     }
 
     @FXML
@@ -125,10 +140,10 @@ public class sellController {
         String type      = typeCombo.getValue();
         String priceText = priceField.getText().trim();
 
-        if (name.isEmpty())           { showError("Please enter item name"); return; }
-        if (type == null)             { showError("Please select item type"); return; }
-        if (priceText.isEmpty())      { showError("Please enter starting price"); return; }
-        if (selectedImage == null)    { showError("Please select an image"); return; }
+        if (name.isEmpty())        { showError("Please enter item name"); return; }
+        if (type == null)          { showError("Please select item type"); return; }
+        if (priceText.isEmpty())   { showError("Please enter starting price"); return; }
+        if (selectedImage == null) { showError("Please select an image"); return; }
 
         BigDecimal startingPrice;
         try {
@@ -147,7 +162,6 @@ public class sellController {
 
         new Thread(() -> {
             try {
-                // FileUtils đọc ảnh
                 byte[] imageBytes = FileUtils.toByteArray(selectedImage);
                 if (imageBytes == null) {
                     Platform.runLater(() -> {
@@ -157,7 +171,6 @@ public class sellController {
                     return;
                 }
 
-                // ItemService tạo và insert item — controller không cần biết logic bên trong
                 Item item = itemService.createItem(name, type, sellerId, imageBytes);
                 boolean itemOk = itemService.addItem(item);
                 if (!itemOk) {
@@ -168,7 +181,6 @@ public class sellController {
                     return;
                 }
 
-                // AuctionService tạo auction — start = now, end = now + 2 ngày
                 LocalDateTime startTime = LocalDateTime.now();
                 LocalDateTime endTime   = startTime.plusDays(2);
 
@@ -188,6 +200,7 @@ public class sellController {
                     return;
                 }
 
+                // Reset form trên UI thread
                 Platform.runLater(() -> {
                     nameField.clear();
                     typeCombo.setValue(null);
@@ -196,8 +209,10 @@ public class sellController {
                     selectedImage = null;
                     showSuccess("Item listed successfully!");
                     submitBtn.setDisable(false);
-                    loadMyItems();
                 });
+
+                // Reload bảng trên background thread — không block UI
+                reloadTable();
 
             } catch (Exception e) {
                 Platform.runLater(() -> {

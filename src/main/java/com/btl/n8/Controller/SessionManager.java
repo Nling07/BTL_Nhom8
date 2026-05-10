@@ -3,23 +3,36 @@ package com.btl.n8.Controller;
 import com.btl.n8.Model.User;
 
 public class SessionManager {
-    private static volatile User currentUser;
+
+    private static volatile SessionManager instance;
+    private volatile User currentUser;
 
     private SessionManager() {}
 
-    public static void setCurrentUser(User user) {
-        currentUser = user;
+    public static SessionManager getInstance() {
+        if (instance == null) {
+            synchronized (SessionManager.class) {
+                if (instance == null) {
+                    instance = new SessionManager();
+                }
+            }
+        }
+        return instance;
     }
 
-    public static User getCurrentUser() {
+    public void setCurrentUser(User user) {
+        this.currentUser = user;
+    }
+
+    public User getCurrentUser() {
         return currentUser;
     }
 
-    public static void logout() {
-        currentUser = null;
+    public void logout() {
+        this.currentUser = null;
     }
 
-    public static boolean isLoggedIn() {
+    public boolean isLoggedIn() {
         return currentUser != null;
     }
 }

@@ -21,7 +21,7 @@ public class accounthomeController {
 
     @FXML
     public void initialize() {
-        User user = SessionManager.getCurrentUser();
+        User user = SessionManager.getInstance().getCurrentUser();
         if (user == null) {
             usernameLabel.setText("Error: Not logged in");
             return;
@@ -31,7 +31,6 @@ public class accounthomeController {
         roleLabel.setText(user.getRole().name());
         idLabel.setText("#" + user.getId());
 
-        // Hiện balance nếu là Bidder
         if (user instanceof Bidder bidder) {
             balanceLabel.setText(String.format("%,.0f ₫", bidder.getBalance()));
         } else {

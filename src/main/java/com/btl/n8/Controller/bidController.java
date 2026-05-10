@@ -35,7 +35,6 @@ public class bidController {
     @FXML private TableColumn<ItemRow, Void>    colAction;
 
     private ObservableList<ItemRow> allItems = FXCollections.observableArrayList();
-
     private ItemService itemService;
     private AuctionService auctionService;
 
@@ -57,7 +56,8 @@ public class bidController {
             {
                 btn.setOnAction(e -> {
                     ItemRow row = getTableView().getItems().get(getIndex());
-                    openBidPopup(row);
+                    btn.setDisable(true);
+                    openBidPopup(row, btn);
                 });
             }
             @Override
@@ -68,33 +68,50 @@ public class bidController {
         });
     }
 
-    private void openBidPopup(ItemRow row) {
-        try {
-            FXMLLoader loader = new FXMLLoader(
-                    getClass().getResource("/fxml/bidDetails.fxml"));
-            Parent root = loader.load();
+    private void openBidPopup(ItemRow row, Button btn) {
+        new Thread(() -> {
+            try {
+                Item item = itemService.getItemById(row.getId());
+                if (item == null) {
+                    Platform.runLater(() -> {
+                        showError("Item not found");
+                        btn.setDisable(false);
+                    });
+                    return;
+                }
 
-            // Dùng ItemService thay vì DAO trực tiếp
-            Item item = itemService.getItemById(row.getId());
-            if (item == null) {
-                showError("Item not found");
-                return;
+                Platform.runLater(() -> {
+                    try {
+                        FXMLLoader loader = new FXMLLoader(
+                                getClass().getResource("/fxml/bidDetails.fxml"));
+                        Parent root = loader.load();
+
+                        bidDetailController controller = loader.getController();
+                        controller.initData(row.getAuctionId(), item);
+
+                        Stage popup = new Stage();
+                        popup.setTitle("Bid - " + row.getName());
+                        popup.setScene(new Scene(root));
+                        popup.initModality(Modality.APPLICATION_MODAL);
+                        popup.setResizable(false);
+                        popup.setOnHidden(e -> btn.setDisable(false));
+                        popup.show();
+
+                    } catch (Exception ex) {
+                        showError("Failed to open auction: " + ex.getMessage());
+                        btn.setDisable(false);
+                        ex.printStackTrace();
+                    }
+                });
+
+            } catch (Exception e) {
+                Platform.runLater(() -> {
+                    showError("Failed to load item: " + e.getMessage());
+                    btn.setDisable(false);
+                });
+                e.printStackTrace();
             }
-
-            bidDetailController controller = loader.getController();
-            controller.initData(row.getAuctionId(), item);
-
-            Stage popup = new Stage();
-            popup.setTitle("Bid - " + row.getName());
-            popup.setScene(new Scene(root));
-            popup.initModality(Modality.APPLICATION_MODAL);
-            popup.setResizable(false);
-            popup.show();
-
-        } catch (Exception ex) {
-            showError("Failed to open auction: " + ex.getMessage());
-            ex.printStackTrace();
-        }
+        }).start();
     }
 
     private void loadData() {
@@ -102,11 +119,11 @@ public class bidController {
             try {
                 Connection conn = DataConnection.getConnection();
                 if (conn == null) throw new Exception("Database connection failed");
+
                 itemService    = new ItemService(new ItemDAOImpl(conn));
                 auctionService = new AuctionService(new AuctionDAOImpl(conn));
 
                 List<Item> items = itemService.getAllItems();
-
                 for (Item item : items) {
                     Auction auction = auctionService.getAuctionByItemId(item.getId());
                     String price    = auction != null ? auction.getCurrentPrice().toPlainString() + " ₫" : "-";
@@ -114,12 +131,8 @@ public class bidController {
                     int auctionId   = auction != null ? auction.getId() : -1;
 
                     allItems.add(new ItemRow(
-                            item.getId(),
-                            item.getName(),
-                            item.getType().name(),
-                            price,
-                            status,
-                            auctionId
+                            item.getId(), item.getName(), item.getType().name(),
+                            price, status, auctionId
                     ));
                 }
 
@@ -135,11 +148,7 @@ public class bidController {
     @FXML
     public void handleSearch(ActionEvent event) {
         String query = searchField.getText().trim();
-
-        if (query.isEmpty()) {
-            itemTable.setItems(allItems);
-            return;
-        }
+        if (query.isEmpty()) { itemTable.setItems(allItems); return; }
 
         ObservableList<ItemRow> filtered = FXCollections.observableArrayList();
         try {
@@ -152,7 +161,6 @@ public class bidController {
                     .filter(r -> r.getName().toLowerCase().contains(query.toLowerCase()))
                     .collect(Collectors.toList()));
         }
-
         itemTable.setItems(filtered);
     }
 
@@ -173,10 +181,7 @@ public class bidController {
 
     public static class ItemRow {
         private final int id;
-        private final String name;
-        private final String type;
-        private final String price;
-        private final String status;
+        private final String name, type, price, status;
         private final int auctionId;
 
         public ItemRow(int id, String name, String type, String price, String status, int auctionId) {
