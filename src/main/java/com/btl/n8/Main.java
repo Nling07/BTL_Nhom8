@@ -2,6 +2,8 @@ package com.btl.n8;
 
 import com.btl.n8.Connection.*;
 import com.btl.n8.Model.*;
+import com.btl.n8.Network.ClientHandler;
+import com.btl.n8.Network.ClientSocket;
 import com.btl.n8.Service.*;
 import com.mysql.cj.jdbc.ConnectionImpl;
 import javafx.application.Application;
@@ -19,6 +21,8 @@ public class Main extends Application {
 
     @Override
     public void start(Stage stage) throws Exception {
+        ClientSocket.getInstance();
+
         FXMLLoader loader = new FXMLLoader(getClass().getResource("/fxml/login.fxml"));
 
         stage.setTitle("Pokemon Auction System");

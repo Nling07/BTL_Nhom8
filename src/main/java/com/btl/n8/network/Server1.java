@@ -1,7 +1,4 @@
-package com.btl.n8.network;
-
-import com.mysql.cj.xdevapi.Client;
-
+package com.btl.n8.Network;
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -11,26 +8,31 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class Server1 {
-    private ServerSocket serversocket;
-    private InputStreamReader in;
-    private PrintWriter out;
-    private Socket socket;
+    private ServerSocket server;
+    private boolean isListening = true;
     private static ArrayList<ClientHandler> clients = new ArrayList<>();
-    private ExecutorService pool = Executors.newFixedThreadPool(4);
+    private ExecutorService pool = Executors.newFixedThreadPool(10);
     private static final int PORT = 9090;
+
     public Server1() throws IOException {
-        ServerSocket listener = new ServerSocket(PORT);
+        this.server = new ServerSocket(PORT);
+        System.out.println("Server dang chay");
 
-        while (true){
-            Socket client = listener.accept();
-            ClientHandler clientThread = new ClientHandler(client,clients);
-            clients.add(clientThread);
+        while (isListening){
+            Socket clientSocket = server.accept();
+            System.out.println("Clien moi ket noi: " + clientSocket.getInetAddress());
+            try{
+                ClientHandler clientHandler = new ClientHandler(clientSocket,clients);
+                clients.add(clientHandler);
+                pool.execute(clientHandler);
 
-            pool.execute(clientThread);
-
+            } catch (IOException e) {
+                System.err.println("Khong the tao clienthandler cho client " + e.getMessage());
+                clientSocket.close();
+            }
         }
-
-
+    }
+    public static void main(String[] args) throws IOException {
+        new Server1();
     }
 }
-

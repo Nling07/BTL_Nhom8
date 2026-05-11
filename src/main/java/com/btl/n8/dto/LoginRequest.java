@@ -1,4 +1,4 @@
-package com.btl.n8.dto;
+package com.btl.n8.DTO;
 
 public class LoginRequest extends Request{
     private String username;
