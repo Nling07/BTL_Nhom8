@@ -3,6 +3,7 @@ import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -10,7 +11,7 @@ import java.util.concurrent.Executors;
 public class Server1 {
     private ServerSocket server;
     private boolean isListening = true;
-    private static ArrayList<ClientHandler> clients = new ArrayList<>();
+    private static CopyOnWriteArrayList<ClientHandler> clients = new CopyOnWriteArrayList<>();
     private ExecutorService pool = Executors.newFixedThreadPool(10);
     private static final int PORT = 9090;
 

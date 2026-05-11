@@ -3,8 +3,6 @@ package com.btl.n8.Network;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
-import javafx.application.Application;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -52,7 +50,12 @@ public class ClientSocket {
         listeners.remove(listener);
     }
 
-
+    /*
+    Đây là hàm tạo ra để chạy trên 1 thread khác(tránh main thread),
+    hàm này sẽ liên tục lắng nghe yêu cầu từ Server
+    Sau khi đọc được yêu cầu từ Server(chuỗi json) thì nó sẽ chuyển về JsonObject để thực hiện gửi JsonObject và xử lí đến controller
+    nào đang cần dữ liệu (cái này nằm trong observer pattern)
+     */
     private void startListening() {
         Thread listenerThread = new Thread(() -> {
             try{
@@ -67,10 +70,11 @@ public class ClientSocket {
                 throw new RuntimeException(e);
             }
         });
-        listenerThread.setDaemon(true);
+        listenerThread.setDaemon(true); //khi tắt app thì hàm nghe mới tắt
         listenerThread.start();
     }
 
+    //Hàm này để gửi đối tượng request từ controller đến client
     public void sendMessage(Object request) {
         if (out == null) {
             System.err.println("Chưa kết nối server!");
@@ -81,6 +85,7 @@ public class ClientSocket {
         System.out.println("Gửi lên server: " + json);
     }
 
+    //Hàm đóng socket
     public void close() {
         try {
             if (socket != null) socket.close();

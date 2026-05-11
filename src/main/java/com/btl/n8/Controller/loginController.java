@@ -2,9 +2,14 @@ package com.btl.n8.Controller;
 
 import com.btl.n8.Connection.DataConnection;
 import com.btl.n8.Connection.UserDAOImpl;
+import com.btl.n8.DTO.LoginRequest;
 import com.btl.n8.Model.Role;
 import com.btl.n8.Model.User;
 
+import com.btl.n8.Network.ClientSocket;
+import com.btl.n8.Network.ServerResponseListener;
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
 import javafx.application.Platform;
 import javafx.concurrent.Task;
 import javafx.event.ActionEvent;
@@ -20,19 +25,19 @@ import javafx.stage.Stage;
 
 import java.sql.Connection;
 
-public class loginController {
+public class loginController implements ServerResponseListener {
 
     @FXML private TextField usernameField;
     @FXML private PasswordField passwordField;
     @FXML private Label messageLabel;
 
+    private static final Gson gson = new Gson();
     public void handleLogin(ActionEvent event) {
         messageLabel.setText("");
         messageLabel.setVisible(false);
 
         String username = usernameField.getText().trim();
         String password = passwordField.getText().trim();
-
         if (username.isEmpty() || password.isEmpty()) {
             messageLabel.setText("Please enter username and password");
             messageLabel.setVisible(true);
@@ -79,6 +84,11 @@ public class loginController {
         }));
 
         new Thread(loginTask).start();
+        //tạo request để gửi đến client (thường thì ở mỗi controller sẽ tạo một cái)
+        LoginRequest loginRequest = new LoginRequest(username,password);
+        ClientSocket.getInstance().sendMessage(loginRequest);
+
+
     }
 
     public void goRegister(ActionEvent event) throws Exception {
@@ -86,5 +96,13 @@ public class loginController {
         Stage stage = (Stage)((Node)event.getSource()).getScene().getWindow();
         stage.setScene(new Scene(root));
         stage.show();
+    }
+
+    /*đây là override hàm trong observer patter, về cơ bản hàm này sẽ xử lí JsonObject mà ở Client đã chuyển dạng đối tượng
+    respone (java) sang JsonObject để xử lí. phần này sẽ được tích hợp với controller nhé.
+    */
+    @Override
+    public void onRespone(JsonObject respone) {
+
     }
 }

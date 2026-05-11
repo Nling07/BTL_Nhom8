@@ -2,6 +2,7 @@ package com.btl.n8.Network;
 
 import com.btl.n8.Connection.*;
 import com.btl.n8.DTO.*;
+import com.btl.n8.Model.Role;
 import com.btl.n8.Model.User;
 import com.btl.n8.Service.AuctionService;
 import com.btl.n8.Service.BidService;
@@ -19,15 +20,24 @@ import java.io.PrintWriter;
 import java.math.BigDecimal;
 import java.net.Socket;
 import java.sql.Connection;
-import java.util.ArrayList;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 
-
+/*FLow chuyển data:
+Client nhận đối tượng request tạo từ controller
+Client gửi lên server thông qua việc biến đối tượng thành chuỗi json
+ở Server, ClientHander chuyển chuỗi json thành đối tượng java để xử lí dữ liệu
+Trong ClientHandler sẽ gọi các service kết nối cùng với database để xử lí
+Khi xử lí xong thì Server sẽ trả về Client 1 respone cùng loại (Ví dụ gửi login request -> login response)
+Client sau khi nhận được respone(chuỗi json) thì chuyển chuổi json đó thành JsonObject
+Sau khi chuyển thành JsonOject thì nó gửi đến các Listener (Controller) để xem controller nào cần thì sử dụng
+Nôm na là kiểu design pattern: Observer pattern
+*/
 public class ClientHandler implements Runnable{
     private Socket socket;
     private BufferedReader in;
     private PrintWriter out;
-    private ArrayList<ClientHandler> clients;
+    private static CopyOnWriteArrayList<ClientHandler> clients;
     private static final Gson gson = new Gson();
 
     private AuctionService auctionService;
@@ -35,7 +45,7 @@ public class ClientHandler implements Runnable{
     private BidService bidService;
     private ItemService itemService;
 
-    public ClientHandler(Socket clientSocket, ArrayList<ClientHandler> clients) throws IOException {
+    public ClientHandler(Socket clientSocket, CopyOnWriteArrayList<ClientHandler> clients) throws IOException {
         this.socket = clientSocket;
         in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
         out = new PrintWriter(clientSocket.getOutputStream(),true);
@@ -86,22 +96,42 @@ public class ClientHandler implements Runnable{
     }
 
     private void handleAddItemRequest(AddItemRequest addItemRequest) {
-            //
+
     }
 
     private void handleRegister(RegisterRequest registerRequest) {
     }
             //
     private void handleLogin(LoginRequest loginRequest) {
+        // xử lí login request từ client, nếu đúng thì trả về respone
         String username = loginRequest.getUsername();
         String password = loginRequest.getPassword();
         User user = userService.login(username,password);
-        if (user == null){
-            out.println(gson.toJson(new BidResponse("BID_FAIL",false,-1,null)));
+        //Kiểm tra user có trong database không, nếu có thì user.getRole để xem là role nó là gì
+        user.getRole();
+        if (user == null) {
+            out.println(gson.toJson(new LoginResponse("LOGIN_FAIL", false, -1, null, null, null)));
+            return;
         }
-        LoginResponse loginResponse = new LoginResponse("Dang nhap thanh cong", true,user.getId(),user.getAccount());
-        String jsonres = gson.toJson(loginResponse);
+        else if (user.getRole().equals(Role.ADMIN)){
+
+        }
+        else if (user.getRole().equals(Role.BIDDER) && user.getRole().equals(Role.SELLER) ){
+            LoginResponse loginResponse = new LoginResponse("Dang nhap thanh cong", true,user.getId(),
+                    user.getAccount(),
+                    user.getRole(),user.getBalance());
+
+        }
+        /*if (user == null){
+            out.println(gson.toJson(new LoginResponse("LOGIN_FAIL",false, -1,null,null,null)));
+            return;
+        }
+        LoginResponse loginResponse = new LoginResponse("Dang nhap thanh cong", true,user.getId(),
+                                            user.getAccount(),
+                                            user.getRole(),user.getBalance());
+                                            String jsonres = gson.toJson(loginResponse);
         out.println(jsonres);
+        */
     }
 
     private void handleBid(BidRequest bidRequest) {
