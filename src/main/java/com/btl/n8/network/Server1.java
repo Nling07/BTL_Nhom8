@@ -3,17 +3,15 @@ import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.Executor;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 
 public class Server1 {
     private ServerSocket server;
     private boolean isListening = true;
-    private static CopyOnWriteArrayList<ClientHandler> clients = new CopyOnWriteArrayList<>();
+    private static ConcurrentHashMap<String,ClientHandler> clients= new ConcurrentHashMap<>();
     private ExecutorService pool = Executors.newFixedThreadPool(10);
     private static final int PORT = 9090;
+    private String token;
 
     public Server1() throws IOException {
         this.server = new ServerSocket(PORT);
@@ -24,7 +22,7 @@ public class Server1 {
             System.out.println("Clien moi ket noi: " + clientSocket.getInetAddress());
             try{
                 ClientHandler clientHandler = new ClientHandler(clientSocket,clients);
-                clients.add(clientHandler);
+                clients.put(token,clientHandler);
                 pool.execute(clientHandler);
 
             } catch (IOException e) {

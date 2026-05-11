@@ -17,8 +17,8 @@ public class LoginResponse extends Response {
         super();
     }
 
-    public LoginResponse(String message, boolean success, int userId, String username, Role role, BigDecimal balance) {
-        super("LOGIN_SUCCESS");
+    public LoginResponse(String message, String sessionId,boolean success, int userId, String username, Role role, BigDecimal balance) {
+        super("LOGIN_SUCCESS",message,sessionId);
         this.message=message;
         this.userId = userId;
         this.username = username;

@@ -16,10 +16,10 @@ public class AddItemRequest extends Request {
 
     public AddItemRequest() {}
 
-    public AddItemRequest(String name, ItemType type, BigDecimal startingPrice,
+    public AddItemRequest(String name, String sessionId,ItemType type, BigDecimal startingPrice,
                           String imageBase64, LocalDateTime startTime,
                           LocalDateTime endTime, int sellerId) {
-        super("ADD_ITEM");
+        super("ADD_ITEM",sessionId);
         this.name = name;
         this.type = type;
         this.startingPrice = startingPrice;

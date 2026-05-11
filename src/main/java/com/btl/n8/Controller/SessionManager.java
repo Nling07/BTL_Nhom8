@@ -3,10 +3,9 @@ package com.btl.n8.Controller;
 import com.btl.n8.Model.User;
 
 public class SessionManager {
-    //phần này bạn định thêm token vào để ở server thì verify user/action.
+    //phần này bạn định thêm token vào để ở server thì verify user.
     private static volatile SessionManager instance;
     private volatile User currentUser;
-
     private SessionManager() {}
 
     public static SessionManager getInstance() {

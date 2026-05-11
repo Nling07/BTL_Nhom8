@@ -1,6 +1,7 @@
 package com.btl.n8.Controller;
 
 import com.btl.n8.Connection.*;
+import com.btl.n8.DTO.AddItemRequest;
 import com.btl.n8.Model.*;
 import com.btl.n8.Service.AuctionService;
 import com.btl.n8.util.FileUtils;
@@ -222,6 +223,7 @@ public class sellController {
                 e.printStackTrace();
             }
         }).start();
+        //AddItemRequest addItemRequest = new AddItemRequest(name,sessionId,type,startingPrice,selectedImage,startTime,EndTime)
     }
 
     private void showError(String message) {
