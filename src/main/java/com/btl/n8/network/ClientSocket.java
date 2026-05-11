@@ -74,7 +74,7 @@ public class ClientSocket {
         listenerThread.start();
     }
 
-    //Hàm này để gửi đối tượng request từ controller đến client
+    //Hàm này để gửi đối tượng request từ controller đến client.
     public void sendMessage(Object request) {
         if (out == null) {
             System.err.println("Chưa kết nối server!");
@@ -85,7 +85,7 @@ public class ClientSocket {
         System.out.println("Gửi lên server: " + json);
     }
 
-    //Hàm đóng socket
+    //Hàm đóng socket.
     public void close() {
         try {
             if (socket != null) socket.close();

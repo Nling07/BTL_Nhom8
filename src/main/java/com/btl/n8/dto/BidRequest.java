@@ -23,7 +23,6 @@ public class BidRequest extends Request {
         this.status = BidStatus.ACTIVE;
     }
 
-    // Getters
     public int getAuctionId() { return auctionId; }
     public int getBidderId() { return bidderId; }
     public BigDecimal getAmount() { return amount; }
