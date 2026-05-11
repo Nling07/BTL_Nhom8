@@ -84,7 +84,7 @@ public class loginController implements ServerResponseListener {
         }));
 
         new Thread(loginTask).start();
-        //tạo request để gửi đến client (thường thì ở mỗi controller sẽ tạo một cái)
+        //tạo request để gửi đến client (thường thì ở mỗi controller sẽ tạo một cái).
         LoginRequest loginRequest = new LoginRequest(username,password);
         ClientSocket.getInstance().sendMessage(loginRequest);
 
@@ -99,7 +99,7 @@ public class loginController implements ServerResponseListener {
     }
 
     /*đây là override hàm trong observer patter, về cơ bản hàm này sẽ xử lí JsonObject mà ở Client đã chuyển dạng đối tượng
-    respone (java) sang JsonObject để xử lí. phần này sẽ được tích hợp với controller nhé.
+    respone (java) sang JsonObject để xử lí. phần này sẽ được tích hợp với controller nhé
     */
     @Override
     public void onRespone(JsonObject respone) {

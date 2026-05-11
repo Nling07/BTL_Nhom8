@@ -16,7 +16,7 @@ public abstract class User {
         this.password = password;
         this.role = role;
     }
-    //thêm constructor để có balance
+    //thêm constructor để có balance.
     public User(int id, String account, String password, Role role,BigDecimal balance){
         this.id = id;
         this.account = account;
