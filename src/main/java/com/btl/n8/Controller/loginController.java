@@ -1,17 +1,14 @@
 package com.btl.n8.Controller;
 
-import com.btl.n8.Connection.DataConnection;
-import com.btl.n8.Connection.UserDAOImpl;
-import com.btl.n8.DTO.LoginRequest;
-import com.btl.n8.Model.Role;
-import com.btl.n8.Model.User;
-
-import com.btl.n8.Network.ClientSocket;
-import com.btl.n8.Network.ServerResponseListener;
+import com.btl.n8.dto.LoginRequest;
+import com.btl.n8.dto.LoginResponse;
+import com.btl.n8.Model.*;
+import com.btl.n8.network.ClientSocket;
+import com.btl.n8.network.ServerResponseListener;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
+
 import javafx.application.Platform;
-import javafx.concurrent.Task;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
@@ -23,7 +20,7 @@ import javafx.scene.control.PasswordField;
 import javafx.scene.control.TextField;
 import javafx.stage.Stage;
 
-import java.sql.Connection;
+import java.math.BigDecimal;
 
 public class loginController implements ServerResponseListener {
 
@@ -32,77 +29,91 @@ public class loginController implements ServerResponseListener {
     @FXML private Label messageLabel;
 
     private static final Gson gson = new Gson();
+    private ActionEvent lastEvent;
+
+    @FXML
+    public void initialize() {
+        ClientSocket.getInstance().addListener(this);
+    }
+
     public void handleLogin(ActionEvent event) {
+        this.lastEvent = event;
         messageLabel.setText("");
         messageLabel.setVisible(false);
 
         String username = usernameField.getText().trim();
         String password = passwordField.getText().trim();
+
         if (username.isEmpty() || password.isEmpty()) {
             messageLabel.setText("Please enter username and password");
             messageLabel.setVisible(true);
             return;
         }
 
-        Task<User> loginTask = new Task<>() {
-            @Override
-            protected User call() throws Exception {
-                Connection conn = DataConnection.getConnection();
-                if (conn == null) throw new Exception("Database connection failed");
-                UserDAOImpl userDAO = new UserDAOImpl(conn);
-                User user = userDAO.findByAccount(username);
-                if (user != null && user.getPassword().equals(password)) {
-                    return user;
-                } else {
-                    throw new Exception("Invalid username or password");
-                }
+        // Kết nối server nếu chưa
+        if (!ClientSocket.getInstance().isConnected()) {
+            boolean ok = ClientSocket.getInstance().connect();
+            if (!ok) {
+                messageLabel.setText("Cannot connect to server!");
+                messageLabel.setVisible(true);
+                return;
             }
-        };
+        }
 
-        loginTask.setOnSucceeded(e -> Platform.runLater(() -> {
-            User user = loginTask.getValue();
+        // Chỉ gửi socket — không login DB trực tiếp nữa
+        ClientSocket.getInstance().sendMessage(new LoginRequest(username, password));
+    }
+
+    @Override
+    public void onRespone(JsonObject response) {
+        String action = response.get("action").getAsString();
+        if (!"LOGIN_SUCCESS".equals(action)) return;
+
+        LoginResponse res = gson.fromJson(response, LoginResponse.class);
+
+        Platform.runLater(() -> {
+            if (!res.isSuccess()) {
+                messageLabel.setText(res.getMessage());
+                messageLabel.setVisible(true);
+                return;
+            }
+
+            // Build User từ response
+            User user = buildUser(res);
             SessionManager.getInstance().setCurrentUser(user);
+
+            // Lưu sessionId vào SessionManager để dùng cho BidRequest
+            SessionManager.getInstance().setSessionId(res.getSessionId());
+
+            ClientSocket.getInstance().removeListener(this);
+
             try {
-                // Admin → admin.fxml, others → home.fxml
-                String fxml = user.getRole() == Role.ADMIN
+                String fxml = res.getRole() == Role.ADMIN
                         ? "/fxml/admin.fxml"
                         : "/fxml/home.fxml";
                 Parent root = FXMLLoader.load(getClass().getResource(fxml));
-                Stage stage = (Stage)((Node)event.getSource()).getScene().getWindow();
+                Stage stage = (Stage)((Node)lastEvent.getSource()).getScene().getWindow();
                 stage.setScene(new Scene(root));
                 stage.show();
-            } catch (Exception ex) {
-                ex.printStackTrace();
+            } catch (Exception e) {
+                e.printStackTrace();
             }
-        }));
+        });
+    }
 
-        loginTask.setOnFailed(e -> Platform.runLater(() -> {
-            messageLabel.setText(loginTask.getException().getMessage() != null
-                    ? loginTask.getException().getMessage()
-                    : "Login failed. Please try again.");
-            messageLabel.setVisible(true);
-        }));
-
-        new Thread(loginTask).start();
-        //tạo request để gửi đến client (thường thì ở mỗi controller sẽ tạo một cái)..
-        LoginRequest loginRequest = new LoginRequest(username,password);
-        ClientSocket.getInstance().sendMessage(loginRequest);
-
-
+    private User buildUser(LoginResponse res) {
+        return switch (res.getRole()) {
+            case BIDDER -> new Bidder(res.getUserId(), res.getUsername(), "", res.getBalance() != null ? res.getBalance() : BigDecimal.ZERO);
+            case SELLER -> new Seller(res.getUserId(), res.getUsername(), "");
+            default     -> new Admin(res.getUserId(), res.getUsername(), "");
+        };
     }
 
     public void goRegister(ActionEvent event) throws Exception {
+        ClientSocket.getInstance().removeListener(this);
         Parent root = FXMLLoader.load(getClass().getResource("/fxml/register.fxml"));
         Stage stage = (Stage)((Node)event.getSource()).getScene().getWindow();
         stage.setScene(new Scene(root));
         stage.show();
-    }
-
-    /*đây là override hàm trong observer patter, về cơ bản hàm này sẽ xử lí JsonObject mà ở Client đã chuyển dạng đối tượng
-    respone (java) sang JsonObject để xử lí. phần này sẽ được tích hợp với controller nhé..
-    */
-    @Override
-    public void onRespone(JsonObject respone) {
-
     }
 }

@@ -1,19 +1,17 @@
-package com.btl.n8.DTO;
+package com.btl.n8.dto;
 
-public class LoginRequest extends Request{
+public class LoginRequest extends com.btl.n8.dto.Request {
     private String username;
     private String password;
-    public LoginRequest(String username, String password){}
-    public LoginRequest(String username, String password,String sessionId){
+
+    public LoginRequest() {}
+
+    public LoginRequest(String username, String password) {
         super("LOGIN");
-        this.username=username;
-        this.password=password;
-    }
-    public String getUsername(){
-        return username;
+        this.username = username;
+        this.password = password;
     }
 
-    public String getPassword(){
-        return password;
-    }
+    public String getUsername() { return username; }
+    public String getPassword() { return password; }
 }

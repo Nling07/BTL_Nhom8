@@ -3,9 +3,11 @@ package com.btl.n8.Controller;
 import com.btl.n8.Model.User;
 
 public class SessionManager {
-    //phần này bạn định thêm token vào để ở server thì verify user.
+
     private static volatile SessionManager instance;
     private volatile User currentUser;
+    private volatile String sessionId; // thêm sessionId cho socket
+
     private SessionManager() {}
 
     public static SessionManager getInstance() {
@@ -19,19 +21,16 @@ public class SessionManager {
         return instance;
     }
 
-    public void setCurrentUser(User user) {
-        this.currentUser = user;
-    }
+    public void setCurrentUser(User user) { this.currentUser = user; }
+    public User getCurrentUser()          { return currentUser; }
 
-    public User getCurrentUser() {
-        return currentUser;
-    }
+    public void setSessionId(String id)   { this.sessionId = id; }
+    public String getSessionId()          { return sessionId; }
 
     public void logout() {
         this.currentUser = null;
+        this.sessionId   = null;
     }
 
-    public boolean isLoggedIn() {
-        return currentUser != null;
-    }
+    public boolean isLoggedIn() { return currentUser != null; }
 }

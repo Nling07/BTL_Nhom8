@@ -1,8 +1,8 @@
-package com.btl.n8.DTO;
+package com.btl.n8.dto;
 
 import com.btl.n8.Controller.SessionManager;
-import com.btl.n8.Network.ServerResponseListener;
-import com.btl.n8.Network.ServerSessionManager;
+import com.btl.n8.network.ServerResponseListener;
+import com.btl.n8.network.ServerSessionManager;
 
 //Request lại từ server cho
 public abstract class Response {

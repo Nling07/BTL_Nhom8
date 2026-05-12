@@ -4,6 +4,12 @@ import com.btl.n8.Connection.*;
 import com.btl.n8.Model.*;
 import com.btl.n8.Service.AuctionService;
 import com.btl.n8.Service.BidService;
+import com.btl.n8.dto.BidRequest;
+import com.btl.n8.dto.BidResponse;
+import com.btl.n8.network.ClientSocket;
+import com.btl.n8.network.ServerResponseListener;
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
 
 import javafx.application.Platform;
 import javafx.fxml.FXML;
@@ -13,6 +19,7 @@ import javafx.scene.chart.NumberAxis;
 import javafx.scene.chart.XYChart;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
+import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.stage.Stage;
 
@@ -24,7 +31,7 @@ import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
 
-public class bidDetailController {
+public class bidDetailController implements ServerResponseListener {
 
     @FXML private ImageView itemImage;
     @FXML private Label itemName;
@@ -43,6 +50,7 @@ public class bidDetailController {
     private int bidderId;
     private Auction auction;
     private Timer countdownTimer;
+    private static final Gson gson = new Gson();
 
     private AuctionService auctionService;
     private BidService bidService;
@@ -65,14 +73,51 @@ public class bidDetailController {
             return;
         }
 
+        // Điền thông tin item
         itemName.setText(item.getName());
         itemId.setText("#" + item.getId());
         itemType.setText(item.getType().name());
-        itemStatus.setText(auction != null ? auction.getStatus().name() : "-");
-        currentPrice.setText(fmt(auction != null ? auction.getCurrentPrice() : BigDecimal.ZERO));
+        updateAuctionStatus();
+
+        // Hiển thị ảnh nếu có
+        if (item.getImage() != null && item.getImage().length > 0) {
+            try {
+                Image img = new Image(new java.io.ByteArrayInputStream(item.getImage()));
+                itemImage.setImage(img);
+            } catch (Exception e) {
+                System.out.println("Không load được ảnh item");
+            }
+        }
 
         loadChart();
         if (auction != null) startCountdown(auction.getEndTime());
+
+        // Đăng ký Observer — lắng nghe broadcast từ server
+        ClientSocket.getInstance().addListener(this);
+    }
+
+    private void updateAuctionStatus() {
+        if (auction == null) {
+            itemStatus.setText("-");
+            currentPrice.setText("-");
+            return;
+        }
+
+        currentPrice.setText(fmt(auction.getCurrentPrice()));
+        String status = auction.getStatus().name();
+        itemStatus.setText(status);
+
+        switch (auction.getStatus()) {
+            case OPEN -> itemStatus.setStyle(
+                    "-fx-background-color: #00ff88; -fx-text-fill: #0a1628; " +
+                            "-fx-padding: 2 8 2 8; -fx-background-radius: 99;");
+            case CLOSED -> itemStatus.setStyle(
+                    "-fx-background-color: #888888; -fx-text-fill: white; " +
+                            "-fx-padding: 2 8 2 8; -fx-background-radius: 99;");
+            case CANCELLED -> itemStatus.setStyle(
+                    "-fx-background-color: #ff6b6b; -fx-text-fill: white; " +
+                            "-fx-padding: 2 8 2 8; -fx-background-radius: 99;");
+        }
     }
 
     private void loadChart() {
@@ -102,10 +147,7 @@ public class bidDetailController {
         bidMsg.setText("");
         String text = bidInput.getText().trim();
 
-        if (text.isEmpty()) {
-            showMsg("Please enter a bid amount", false);
-            return;
-        }
+        if (text.isEmpty()) { showMsg("Please enter a bid amount", false); return; }
 
         BigDecimal amount;
         try {
@@ -119,33 +161,47 @@ public class bidDetailController {
             return;
         }
 
-        if (auction == null) {
-            showMsg("Auction not available", false);
-            return;
-        }
-        if (auction.getStatus() != AuctionStatus.OPEN) {
-            showMsg("Auction is not open", false);
-            return;
-        }
+        if (auction == null)                            { showMsg("Auction not available", false); return; }
+        if (auction.getStatus() != AuctionStatus.OPEN)  { showMsg("Auction is not open", false); return; }
         if (amount.compareTo(auction.getCurrentPrice()) <= 0) {
             showMsg("Bid must be higher than " + fmt(auction.getCurrentPrice()), false);
             return;
         }
 
+        // Gửi BidRequest qua Socket — server xử lý + broadcast
         new Thread(() -> {
-            boolean ok = bidService.placeBid(auctionId, bidderId, amount);
-            Platform.runLater(() -> {
-                if (ok) {
-                    auction = auctionService.getAuctionById(auctionId);
-                    currentPrice.setText(fmt(auction.getCurrentPrice()));
-                    bidInput.clear();
-                    showMsg("Bid placed!", true);
-                    loadChart();
-                } else {
-                    showMsg("Failed to place bid", false);
-                }
-            });
+            BidRequest req = new BidRequest(auctionId, bidderId, amount);
+            req.setSessionId(SessionManager.getInstance().getSessionId());
+            ClientSocket.getInstance().sendMessage(req);
         }).start();
+
+        bidInput.clear();
+        showMsg("Bid sent...", true);
+    }
+
+    // Observer: nhận broadcast BID_UPDATE từ server
+    @Override
+    public void onRespone(JsonObject response) {
+        String action = response.get("action").getAsString();
+        if (!"BID_UPDATE".equals(action)) return; // khớp với BidResponse constructor
+
+        BidResponse res = gson.fromJson(response, BidResponse.class);
+        if (res.getAuctionId() != this.auctionId) return; // không phải auction đang xem
+
+        Platform.runLater(() -> {
+            if (res.isSuccess()) {
+                // Reload auction từ DB để lấy trạng thái mới nhất
+                new Thread(() -> {
+                    Auction updated = auctionService.getAuctionById(auctionId);
+                    Platform.runLater(() -> {
+                        auction = updated;
+                        updateAuctionStatus();
+                        loadChart();
+                        showMsg("New bid: " + fmt(res.getCurrentPrice()), true);
+                    });
+                }).start();
+            }
+        });
     }
 
     private void startCountdown(LocalDateTime endTime) {
@@ -155,7 +211,19 @@ public class bidDetailController {
             public void run() {
                 long diff = java.time.Duration.between(LocalDateTime.now(), endTime).getSeconds();
                 if (diff <= 0) {
-                    Platform.runLater(() -> timerLabel.setText("Ended"));
+                    Platform.runLater(() -> {
+                        timerLabel.setText("Ended");
+                        // Fix: reload auction để lấy status mới nhất từ DB
+                        new Thread(() -> {
+                            Auction updated = auctionService.getAuctionById(auctionId);
+                            Platform.runLater(() -> {
+                                auction = updated;
+                                updateAuctionStatus();
+                                bidInput.setDisable(true);
+                                showMsg("Auction has ended!", false);
+                            });
+                        }).start();
+                    });
                     countdownTimer.cancel();
                     return;
                 }
@@ -171,6 +239,7 @@ public class bidDetailController {
     @FXML
     public void handleClose() {
         if (countdownTimer != null) countdownTimer.cancel();
+        ClientSocket.getInstance().removeListener(this); // tránh memory leak
         Stage stage = (Stage) bidInput.getScene().getWindow();
         stage.close();
     }

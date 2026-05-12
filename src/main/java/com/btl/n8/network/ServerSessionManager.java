@@ -1,4 +1,4 @@
-package com.btl.n8.Network;
+package com.btl.n8.network;
 
 import com.btl.n8.Model.User;
 

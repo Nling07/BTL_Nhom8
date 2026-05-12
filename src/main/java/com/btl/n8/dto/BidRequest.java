@@ -1,4 +1,4 @@
-package com.btl.n8.DTO;
+package com.btl.n8.dto;
 
 import com.btl.n8.Model.BidStatus;
 

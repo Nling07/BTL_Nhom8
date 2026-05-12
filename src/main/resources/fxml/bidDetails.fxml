@@ -112,7 +112,7 @@
 
         <!-- StackPane đè ImageView lên Button -->
         <StackPane prefWidth="120.0" prefHeight="36.0">
-            <Button text="" onAction="#handlePlaceBid"
+            <Button fx:id="bidButton" text="" onAction="#handlePlaceBid"
                     prefWidth="120.0" prefHeight="36.0"
                     style="-fx-background-color: transparent; -fx-border-color: transparent;"/>
             <ImageView fitWidth="120.0" fitHeight="36.0"

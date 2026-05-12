@@ -1,4 +1,4 @@
-package com.btl.n8.DTO;
+package com.btl.n8.dto;
 
 public class RegisterRequest extends Request{
     private String userName;

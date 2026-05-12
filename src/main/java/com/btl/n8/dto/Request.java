@@ -1,4 +1,4 @@
-package com.btl.n8.DTO;
+package com.btl.n8.dto;
 
 // lấy request từ client sang server.
 public class Request {
