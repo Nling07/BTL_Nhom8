@@ -51,4 +51,9 @@ public class BidService {
         }
         return false;
     }
+
+    // Xóa bid theo id
+    public boolean deleteBidById(int id) {
+        return bidDAO.deleteById(id);
+    }
 }
