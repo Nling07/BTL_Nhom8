@@ -64,4 +64,8 @@ public class AuctionService {
         return auctionDAO.findAll();
     }
 
+    // Xóa auction theo id
+    public boolean deleteAuctionById(int id) {
+        return auctionDAO.deleteById(id);
+    }
 }
