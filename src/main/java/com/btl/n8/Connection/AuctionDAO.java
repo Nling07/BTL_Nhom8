@@ -12,4 +12,5 @@ public interface AuctionDAO {
     boolean update(Auction auction);
     boolean updateCurrentPrice(int auctionId, BigDecimal price);
     List<Auction> findAll();
+    boolean deleteById(int id);
 }

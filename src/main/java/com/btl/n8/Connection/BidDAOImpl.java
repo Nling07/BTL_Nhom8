@@ -129,6 +129,22 @@ public class BidDAOImpl implements BidDAO {
         return false;
     }
 
+    @Override
+    public boolean deleteById(int id) {
+        String sql = "DELETE FROM bids WHERE bid_id = ?";
+
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, id);
+
+            int rows = ps.executeUpdate();
+            return rows > 0;
+        } catch (SQLException e) {
+            System.out.println("Lỗi SQL khi delete bid: " + e.getMessage());
+        }
+
+        return false;
+    }
+
     private Bid mapBid(ResultSet rs) throws SQLException {
         int id = rs.getInt("bid_id");
         int auctionId = rs.getInt("auction_id");
@@ -142,5 +158,3 @@ public class BidDAOImpl implements BidDAO {
         return new Bid(id, auctionId, bidderId, amount, bidTime, status);
     }
 }
-
-

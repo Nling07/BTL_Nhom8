@@ -9,5 +9,5 @@ public interface ItemDAO {
     Item findById(int id);
     List<Item> findAll();
     List<Item> findBySeller(int sellerId);
-
+    boolean deleteById(int id);
 }
