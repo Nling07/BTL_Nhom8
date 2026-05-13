@@ -49,6 +49,7 @@ public class ItemService {
                 .filter(i -> i.getType() == type)
                 .collect(Collectors.toList());
     }
+
     // Tạo item đúng loại — tách logic khỏi controller
     public Item createItem(String name, String type, int sellerId, byte[] imageBytes) {
         ItemType itemType = ItemType.valueOf(type);
@@ -57,5 +58,10 @@ public class ItemService {
             case FIGURE -> new Figure(name, sellerId, imageBytes);
             case CARD -> new Card(name, sellerId, imageBytes);
         };
+    }
+
+    // Xóa item theo id
+    public boolean deleteItemById(int id) {
+        return itemDAO.deleteById(id);
     }
 }
