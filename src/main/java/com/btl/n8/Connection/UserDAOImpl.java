@@ -12,54 +12,128 @@ public class UserDAOImpl implements UserDAO {
 
     @Override
     public boolean insert(User user) {
-        String sql = "INSERT INTO users (account, password, role) VALUES (?, ?, ?)";
 
-        // Sử dụng try-with-resources để tự động đóng ps và rs
-        try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+        try {
 
-            ps.setString(1, user.getAccount());
-            ps.setString(2, user.getPassword());
-            ps.setString(3, user.getRole().name());
+            conn.setAutoCommit(false);
 
-            int rows = ps.executeUpdate();
+            boolean insertedUser = insertUser(user);
 
-            if (rows > 0) {
-                try (ResultSet rs = ps.getGeneratedKeys()) {
-                    if (rs.next()) {
-                        int userId = rs.getInt(1);
-                        user.setId(userId);
-
-                        // Xử lý BIDDER
-                        if (user instanceof Bidder) {
-                            String sql2 = "INSERT INTO bidders(user_id, balance) VALUES (?, ?)";
-                            try (PreparedStatement ps2 = conn.prepareStatement(sql2)) {
-                                ps2.setInt(1, userId);
-                                ps2.setBigDecimal(2, ((Bidder) user).getBalance());
-                                ps2.executeUpdate();
-                            } // ps2 tự đóng ở đây
-                        }
-
-                        // Xử lý SELLER
-                        if (user instanceof Seller) {
-                            String sql3 = "INSERT INTO sellers(seller_id) VALUES (?)";
-                            try (PreparedStatement ps3 = conn.prepareStatement(sql3)) {
-                                ps3.setInt(1, userId);
-                                ps3.executeUpdate();
-                            } // ps3 tự đóng ở đây
-                        }
-                    }
-                } // rs tự đóng ở đây
-                return true;
+            if (!insertedUser) {
+                conn.rollback();
+                return false;
             }
 
-        } catch (SQLIntegrityConstraintViolationException e) {
-            System.err.println("Trùng username hoặc lỗi ràng buộc: " + e.getMessage());
+            if (user instanceof Bidder bidder) {
+
+                boolean insertedBidder =
+                        insertBidder(bidder);
+
+                if (!insertedBidder) {
+                    conn.rollback();
+                    return false;
+                }
+            }
+
+            if (user instanceof Seller seller) {
+
+                boolean insertedSeller =
+                        insertSeller(seller);
+
+                if (!insertedSeller) {
+                    conn.rollback();
+                    return false;
+                }
+            }
+
+            conn.commit();
+            return true;
+
         } catch (SQLException e) {
-            System.err.println("Lỗi SQL khi insert: " + e.getMessage());
+
+            try {
+                conn.rollback();
+            } catch (SQLException ex) {
+                ex.printStackTrace();
+            }
+
+            System.out.println("Lỗi transaction: " + e.getMessage());
         }
 
         return false;
     }
+
+    @Override
+    public boolean upgradeToSeller(int userId) {
+
+        try {
+
+            conn.setAutoCommit(false);
+
+            User user = findById(userId);
+
+            if (user == null) {
+                conn.rollback();
+                return false;
+            }
+
+            // đã là seller
+            if (user.getRole() == Role.SELLER) {
+                conn.rollback();
+                return false;
+            }
+
+            // update role
+            boolean updatedRole =
+                    setRoleById(userId, Role.SELLER);
+
+            if (!updatedRole) {
+                conn.rollback();
+                return false;
+            }
+
+            // insert seller table
+            Seller seller = new Seller(
+                    user.getId(),
+                    user.getAccount(),
+                    user.getPassword()
+            );
+
+            boolean insertedSeller =
+                    insertSeller(seller);
+
+            if (!insertedSeller) {
+                conn.rollback();
+                return false;
+            }
+
+            conn.commit();
+            return true;
+
+        } catch (SQLException e) {
+
+            try {
+                conn.rollback();
+            } catch (SQLException ex) {
+                ex.printStackTrace();
+            }
+
+            System.out.println("Lỗi transaction upgrade seller: "
+                    + e.getMessage());
+
+        } finally {
+
+            try {
+                conn.setAutoCommit(true);
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
+        }
+
+        return false;
+    }
+
+
 
     @Override
     public boolean update(User user) {
@@ -95,6 +169,27 @@ public class UserDAOImpl implements UserDAO {
         return false;
     }
 
+    @Override
+    public boolean setRoleById(int userId, Role role) {
+
+        String sql = "UPDATE users SET role = ? WHERE user_id = ?";
+
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            ps.setString(1, role.name());
+            ps.setInt(2, userId);
+
+            int rows = ps.executeUpdate();
+
+            return rows > 0;
+
+        } catch (SQLException e) {
+
+            System.out.println("Lỗi SQL khi update role: " + e.getMessage());
+        }
+
+        return false;
+    }
 
     @Override
     public User findByAccount(String account) {
@@ -167,6 +262,80 @@ public class UserDAOImpl implements UserDAO {
         } else {
             return new Admin(id, account, password);
         }
+    }
+
+    private boolean insertUser(User user) {
+
+        String sql = "INSERT INTO users (account, password, role) VALUES (?, ?, ?)";
+
+        try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+
+            ps.setString(1, user.getAccount());
+            ps.setString(2, user.getPassword());
+            ps.setString(3, user.getRole().name());
+
+            int rows = ps.executeUpdate();
+
+            if (rows > 0) {
+
+                try (ResultSet rs = ps.getGeneratedKeys()) {
+
+                    if (rs.next()) {
+
+                        int userId = rs.getInt(1);
+
+                        // gán id lại cho object
+                        user.setId(userId);
+
+                        return true;
+                    }
+                }
+            }
+
+        } catch (SQLException e) {
+            System.out.println("Lỗi SQL khi insert user: " + e.getMessage());
+        }
+
+        return false;
+    }
+
+    private boolean insertBidder(Bidder bidder) {
+
+        String sql = "INSERT INTO bidders(user_id, balance) VALUES (?, ?)";
+
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            ps.setInt(1, bidder.getId());
+            ps.setBigDecimal(2, bidder.getBalance());
+
+            int rows = ps.executeUpdate();
+
+            return rows > 0;
+
+        } catch (SQLException e) {
+            System.out.println("Lỗi SQL khi insert bidder: " + e.getMessage());
+        }
+
+        return false;
+    }
+
+    private boolean insertSeller(Seller seller) {
+
+        String sql = "INSERT INTO sellers(seller_id) VALUES (?)";
+
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+
+            ps.setInt(1, seller.getId());
+
+            int rows = ps.executeUpdate();
+
+            return rows > 0;
+
+        } catch (SQLException e) {
+            System.out.println("Lỗi SQL khi insert seller: " + e.getMessage());
+        }
+
+        return false;
     }
 
 }
