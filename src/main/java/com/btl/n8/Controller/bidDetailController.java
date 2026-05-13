@@ -73,13 +73,11 @@ public class bidDetailController implements ServerResponseListener {
             return;
         }
 
-        // Điền thông tin item
         itemName.setText(item.getName());
         itemId.setText("#" + item.getId());
         itemType.setText(item.getType().name());
         updateAuctionStatus();
 
-        // Hiển thị ảnh nếu có
         if (item.getImage() != null && item.getImage().length > 0) {
             try {
                 Image img = new Image(new java.io.ByteArrayInputStream(item.getImage()));
@@ -92,22 +90,18 @@ public class bidDetailController implements ServerResponseListener {
         loadChart();
 
         if (auction != null) {
-            // Nếu auction đã hết giờ ngay khi mở → disable luôn
             if (LocalDateTime.now().isAfter(auction.getEndTime())) {
                 bidInput.setDisable(true);
                 timerLabel.setText("Ended");
-                // Reload để đảm bảo status đúng
                 reloadAuction();
             } else {
                 startCountdown(auction.getEndTime());
             }
         }
 
-        // Đăng ký Observer
         ClientSocket.getInstance().addListener(this);
     }
 
-    // Cập nhật status + giá + màu badge lên UI
     private void updateAuctionStatus() {
         if (auction == null) {
             itemStatus.setText("-");
@@ -124,24 +118,23 @@ public class bidDetailController implements ServerResponseListener {
                 itemStatus.setStyle(
                         "-fx-background-color: #00ff88; -fx-text-fill: #0a1628; " +
                                 "-fx-padding: 2 8 2 8; -fx-background-radius: 99;");
-                bidInput.setDisable(false); // enable khi OPEN
+                bidInput.setDisable(false);
             }
             case CLOSED -> {
                 itemStatus.setStyle(
                         "-fx-background-color: #888888; -fx-text-fill: white; " +
                                 "-fx-padding: 2 8 2 8; -fx-background-radius: 99;");
-                bidInput.setDisable(true); // disable khi CLOSED
+                bidInput.setDisable(true);
             }
             case CANCELLED -> {
                 itemStatus.setStyle(
                         "-fx-background-color: #ff6b6b; -fx-text-fill: white; " +
                                 "-fx-padding: 2 8 2 8; -fx-background-radius: 99;");
-                bidInput.setDisable(true); // disable khi CANCELLED
+                bidInput.setDisable(true);
             }
         }
     }
 
-    // Reload auction từ DB trên background thread
     private void reloadAuction() {
         new Thread(() -> {
             Auction updated = auctionService.getAuctionById(auctionId);
@@ -193,7 +186,7 @@ public class bidDetailController implements ServerResponseListener {
             return;
         }
 
-        // Reload auction mới nhất từ DB trước khi check
+        // Reload auction mới nhất trước khi check
         new Thread(() -> {
             Auction latest = auctionService.getAuctionById(auctionId);
             Platform.runLater(() -> {
@@ -204,7 +197,7 @@ public class bidDetailController implements ServerResponseListener {
                     return;
                 }
                 if (auction.getStatus() != AuctionStatus.OPEN) {
-                    updateAuctionStatus(); // cập nhật badge
+                    updateAuctionStatus();
                     showMsg("Auction is not open!", false);
                     return;
                 }
@@ -226,7 +219,6 @@ public class bidDetailController implements ServerResponseListener {
         }).start();
     }
 
-    // Observer: nhận broadcast BID_UPDATE từ server
     @Override
     public void onRespone(JsonObject response) {
         String action = response.get("action").getAsString();
@@ -243,9 +235,17 @@ public class bidDetailController implements ServerResponseListener {
                         auction = updated;
                         updateAuctionStatus();
                         loadChart();
-                        showMsg("New bid: " + fmt(res.getCurrentPrice()), true);
+
+                        // Check bidderId để hiện đúng thông báo
+                        if (res.getBidderId() != bidderId) {
+                            showMsg("⚡ Someone placed: " + fmt(res.getCurrentPrice()), true);
+                        } else {
+                            showMsg("✓ Your bid was placed!", true);
+                        }
                     });
                 }).start();
+            } else {
+                showMsg(res.getMessage(), false);
             }
         });
     }
@@ -259,10 +259,9 @@ public class bidDetailController implements ServerResponseListener {
                 if (diff <= 0) {
                     Platform.runLater(() -> {
                         timerLabel.setText("Ended");
-                        bidInput.setDisable(true); // disable ngay lập tức
+                        bidInput.setDisable(true);
                     });
 
-                    // Reload auction từ DB — cập nhật status CLOSED
                     new Thread(() -> {
                         Auction updated = auctionService.getAuctionById(auctionId);
                         Platform.runLater(() -> {
