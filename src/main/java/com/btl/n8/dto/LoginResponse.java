@@ -1,37 +1,30 @@
 package com.btl.n8.dto;
 
 import com.btl.n8.Model.Role;
-
 import java.math.BigDecimal;
 
 public class LoginResponse extends Response {
-    private String message;
-    private  BigDecimal balance;
-    private Role role;
+    private boolean success;
     private int userId;
     private String username;
-    private String token;
-    private boolean success;
+    private Role role;
+    private BigDecimal balance;
 
-    public LoginResponse() {
-        super();
-    }
+    public LoginResponse() { super(); }
 
-    public LoginResponse(String message, String sessionId,boolean success, int userId, String username, Role role, BigDecimal balance) {
-        super("LOGIN_SUCCESS",message,sessionId);
-        this.message=message;
-        this.userId = userId;
+    public LoginResponse(String message, String sessionId, boolean success,
+                         int userId, String username, Role role, BigDecimal balance) {
+        super("LOGIN_SUCCESS", message, sessionId);
+        this.success  = success;
+        this.userId   = userId;
         this.username = username;
-        this.success = success;
-        this.role = role;
-        this.balance = balance;
+        this.role     = role;
+        this.balance  = balance;
     }
 
-
-    public int getUserId() { return userId; }
-    public String getUsername() { return username; }
-    public boolean isSuccess() { return success; }
-    public BigDecimal getBalance(){return balance;}
-    public Role getRole(){return role;}
-
+    public boolean isSuccess()         { return success; }
+    public int getUserId()             { return userId; }
+    public String getUsername()        { return username; }
+    public Role getRole()              { return role; }
+    public BigDecimal getBalance()     { return balance; }
 }

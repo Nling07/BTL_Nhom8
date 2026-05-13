@@ -63,4 +63,5 @@ public class AuctionService {
     public List<Auction> getAllAuctions() {
         return auctionDAO.findAll();
     }
+
 }

@@ -1,23 +1,21 @@
 package com.btl.n8.dto;
 
 public class RegisterResponse extends Response {
+    private boolean success;
     private int userId;
     private String username;
-    private boolean success;
-    private String sessionId;
-    public RegisterResponse() {
-        super();
-    }
 
-    public RegisterResponse(String message,String sessionId,boolean success, int userId, String username) {
-        super("REGISTER_SUCCESS",message,sessionId);
-        this.userId = userId;
+    public RegisterResponse() { super(); }
+
+    public RegisterResponse(String message, String sessionId, boolean success,
+                            int userId, String username) {
+        super("REGISTER_SUCCESS", message, sessionId);
+        this.success  = success;
+        this.userId   = userId;
         this.username = username;
-        this.success = success;
     }
 
-    public int getUserId() { return userId; }
-    public String getUsername() { return username; }
-    public boolean isSuccess() { return success; }
-
+    public boolean isSuccess()     { return success; }
+    public int getUserId()         { return userId; }
+    public String getUsername()    { return username; }
 }

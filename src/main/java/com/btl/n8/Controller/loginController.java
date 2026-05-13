@@ -38,8 +38,8 @@ public class loginController implements ServerResponseListener {
 
     public void handleLogin(ActionEvent event) {
         this.lastEvent = event;
-        messageLabel.setText("");
-        messageLabel.setVisible(false);
+        messageLabel.setText("Connecting...");
+        messageLabel.setVisible(true);
 
         String username = usernameField.getText().trim();
         String password = passwordField.getText().trim();
@@ -50,18 +50,21 @@ public class loginController implements ServerResponseListener {
             return;
         }
 
-        // Kết nối server nếu chưa
-        if (!ClientSocket.getInstance().isConnected()) {
-            boolean ok = ClientSocket.getInstance().connect();
-            if (!ok) {
-                messageLabel.setText("Cannot connect to server!");
-                messageLabel.setVisible(true);
-                return;
+        // Chạy connect + send trên background thread — không block UI
+        new Thread(() -> {
+            if (!ClientSocket.getInstance().isConnected()) {
+                boolean ok = ClientSocket.getInstance().connect();
+                if (!ok) {
+                    Platform.runLater(() -> {
+                        messageLabel.setText("Cannot connect to server!");
+                        messageLabel.setVisible(true);
+                    });
+                    return;
+                }
             }
-        }
-
-        // Chỉ gửi socket — không login DB trực tiếp nữa
-        ClientSocket.getInstance().sendMessage(new LoginRequest(username, password));
+            // Gửi LoginRequest qua socket
+            ClientSocket.getInstance().sendMessage(new LoginRequest(username, password));
+        }).start();
     }
 
     @Override
@@ -78,13 +81,9 @@ public class loginController implements ServerResponseListener {
                 return;
             }
 
-            // Build User từ response
             User user = buildUser(res);
             SessionManager.getInstance().setCurrentUser(user);
-
-            // Lưu sessionId vào SessionManager để dùng cho BidRequest
             SessionManager.getInstance().setSessionId(res.getSessionId());
-
             ClientSocket.getInstance().removeListener(this);
 
             try {
@@ -103,7 +102,8 @@ public class loginController implements ServerResponseListener {
 
     private User buildUser(LoginResponse res) {
         return switch (res.getRole()) {
-            case BIDDER -> new Bidder(res.getUserId(), res.getUsername(), "", res.getBalance() != null ? res.getBalance() : BigDecimal.ZERO);
+            case BIDDER -> new Bidder(res.getUserId(), res.getUsername(), "",
+                    res.getBalance() != null ? res.getBalance() : BigDecimal.ZERO);
             case SELLER -> new Seller(res.getUserId(), res.getUsername(), "");
             default     -> new Admin(res.getUserId(), res.getUsername(), "");
         };

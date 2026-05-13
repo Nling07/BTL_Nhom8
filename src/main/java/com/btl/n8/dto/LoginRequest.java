@@ -1,6 +1,6 @@
 package com.btl.n8.dto;
 
-public class LoginRequest extends com.btl.n8.dto.Request {
+public class LoginRequest extends Request {
     private String username;
     private String password;
 

@@ -40,7 +40,9 @@ public class ClientSocket {
     public boolean connect() {
         if (connected) return true;
         try {
-            socket    = new Socket(SERVER_IP, SERVER_PORT);
+            socket = new Socket();
+            // Timeout 3 giây thay vì chờ mãi
+            socket.connect(new java.net.InetSocketAddress(SERVER_IP, SERVER_PORT), 3000);
             in        = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             out       = new PrintWriter(socket.getOutputStream(), true);
             connected = true;
@@ -53,7 +55,6 @@ public class ClientSocket {
             return false;
         }
     }
-
     public boolean isConnected() {
         return connected && socket != null && !socket.isClosed();
     }

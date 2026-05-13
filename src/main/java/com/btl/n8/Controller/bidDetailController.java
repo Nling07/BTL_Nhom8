@@ -90,34 +90,66 @@ public class bidDetailController implements ServerResponseListener {
         }
 
         loadChart();
-        if (auction != null) startCountdown(auction.getEndTime());
 
-        // Đăng ký Observer — lắng nghe broadcast từ server
+        if (auction != null) {
+            // Nếu auction đã hết giờ ngay khi mở → disable luôn
+            if (LocalDateTime.now().isAfter(auction.getEndTime())) {
+                bidInput.setDisable(true);
+                timerLabel.setText("Ended");
+                // Reload để đảm bảo status đúng
+                reloadAuction();
+            } else {
+                startCountdown(auction.getEndTime());
+            }
+        }
+
+        // Đăng ký Observer
         ClientSocket.getInstance().addListener(this);
     }
 
+    // Cập nhật status + giá + màu badge lên UI
     private void updateAuctionStatus() {
         if (auction == null) {
             itemStatus.setText("-");
             currentPrice.setText("-");
+            bidInput.setDisable(true);
             return;
         }
 
         currentPrice.setText(fmt(auction.getCurrentPrice()));
-        String status = auction.getStatus().name();
-        itemStatus.setText(status);
+        itemStatus.setText(auction.getStatus().name());
 
         switch (auction.getStatus()) {
-            case OPEN -> itemStatus.setStyle(
-                    "-fx-background-color: #00ff88; -fx-text-fill: #0a1628; " +
-                            "-fx-padding: 2 8 2 8; -fx-background-radius: 99;");
-            case CLOSED -> itemStatus.setStyle(
-                    "-fx-background-color: #888888; -fx-text-fill: white; " +
-                            "-fx-padding: 2 8 2 8; -fx-background-radius: 99;");
-            case CANCELLED -> itemStatus.setStyle(
-                    "-fx-background-color: #ff6b6b; -fx-text-fill: white; " +
-                            "-fx-padding: 2 8 2 8; -fx-background-radius: 99;");
+            case OPEN -> {
+                itemStatus.setStyle(
+                        "-fx-background-color: #00ff88; -fx-text-fill: #0a1628; " +
+                                "-fx-padding: 2 8 2 8; -fx-background-radius: 99;");
+                bidInput.setDisable(false); // enable khi OPEN
+            }
+            case CLOSED -> {
+                itemStatus.setStyle(
+                        "-fx-background-color: #888888; -fx-text-fill: white; " +
+                                "-fx-padding: 2 8 2 8; -fx-background-radius: 99;");
+                bidInput.setDisable(true); // disable khi CLOSED
+            }
+            case CANCELLED -> {
+                itemStatus.setStyle(
+                        "-fx-background-color: #ff6b6b; -fx-text-fill: white; " +
+                                "-fx-padding: 2 8 2 8; -fx-background-radius: 99;");
+                bidInput.setDisable(true); // disable khi CANCELLED
+            }
         }
+    }
+
+    // Reload auction từ DB trên background thread
+    private void reloadAuction() {
+        new Thread(() -> {
+            Auction updated = auctionService.getAuctionById(auctionId);
+            Platform.runLater(() -> {
+                auction = updated;
+                updateAuctionStatus();
+            });
+        }).start();
     }
 
     private void loadChart() {
@@ -161,36 +193,50 @@ public class bidDetailController implements ServerResponseListener {
             return;
         }
 
-        if (auction == null)                            { showMsg("Auction not available", false); return; }
-        if (auction.getStatus() != AuctionStatus.OPEN)  { showMsg("Auction is not open", false); return; }
-        if (amount.compareTo(auction.getCurrentPrice()) <= 0) {
-            showMsg("Bid must be higher than " + fmt(auction.getCurrentPrice()), false);
-            return;
-        }
-
-        // Gửi BidRequest qua Socket — server xử lý + broadcast
+        // Reload auction mới nhất từ DB trước khi check
         new Thread(() -> {
-            BidRequest req = new BidRequest(auctionId, bidderId, amount);
-            req.setSessionId(SessionManager.getInstance().getSessionId());
-            ClientSocket.getInstance().sendMessage(req);
-        }).start();
+            Auction latest = auctionService.getAuctionById(auctionId);
+            Platform.runLater(() -> {
+                auction = latest;
 
-        bidInput.clear();
-        showMsg("Bid sent...", true);
+                if (auction == null) {
+                    showMsg("Auction not available", false);
+                    return;
+                }
+                if (auction.getStatus() != AuctionStatus.OPEN) {
+                    updateAuctionStatus(); // cập nhật badge
+                    showMsg("Auction is not open!", false);
+                    return;
+                }
+                if (amount.compareTo(auction.getCurrentPrice()) <= 0) {
+                    showMsg("Bid must be higher than " + fmt(auction.getCurrentPrice()), false);
+                    return;
+                }
+
+                // Gửi qua Socket
+                new Thread(() -> {
+                    BidRequest req = new BidRequest(auctionId, bidderId, amount);
+                    req.setSessionId(SessionManager.getInstance().getSessionId());
+                    ClientSocket.getInstance().sendMessage(req);
+                }).start();
+
+                bidInput.clear();
+                showMsg("Bid sent...", true);
+            });
+        }).start();
     }
 
     // Observer: nhận broadcast BID_UPDATE từ server
     @Override
     public void onRespone(JsonObject response) {
         String action = response.get("action").getAsString();
-        if (!"BID_UPDATE".equals(action)) return; // khớp với BidResponse constructor
+        if (!"BID_UPDATE".equals(action)) return;
 
         BidResponse res = gson.fromJson(response, BidResponse.class);
-        if (res.getAuctionId() != this.auctionId) return; // không phải auction đang xem
+        if (res.getAuctionId() != this.auctionId) return;
 
         Platform.runLater(() -> {
             if (res.isSuccess()) {
-                // Reload auction từ DB để lấy trạng thái mới nhất
                 new Thread(() -> {
                     Auction updated = auctionService.getAuctionById(auctionId);
                     Platform.runLater(() -> {
@@ -213,17 +259,19 @@ public class bidDetailController implements ServerResponseListener {
                 if (diff <= 0) {
                     Platform.runLater(() -> {
                         timerLabel.setText("Ended");
-                        // Fix: reload auction để lấy status mới nhất từ DB
-                        new Thread(() -> {
-                            Auction updated = auctionService.getAuctionById(auctionId);
-                            Platform.runLater(() -> {
-                                auction = updated;
-                                updateAuctionStatus();
-                                bidInput.setDisable(true);
-                                showMsg("Auction has ended!", false);
-                            });
-                        }).start();
+                        bidInput.setDisable(true); // disable ngay lập tức
                     });
+
+                    // Reload auction từ DB — cập nhật status CLOSED
+                    new Thread(() -> {
+                        Auction updated = auctionService.getAuctionById(auctionId);
+                        Platform.runLater(() -> {
+                            auction = updated;
+                            updateAuctionStatus();
+                            showMsg("Auction has ended!", false);
+                        });
+                    }).start();
+
                     countdownTimer.cancel();
                     return;
                 }
@@ -239,7 +287,7 @@ public class bidDetailController implements ServerResponseListener {
     @FXML
     public void handleClose() {
         if (countdownTimer != null) countdownTimer.cancel();
-        ClientSocket.getInstance().removeListener(this); // tránh memory leak
+        ClientSocket.getInstance().removeListener(this);
         Stage stage = (Stage) bidInput.getScene().getWindow();
         stage.close();
     }
