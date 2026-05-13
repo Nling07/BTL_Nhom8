@@ -11,4 +11,5 @@ public interface BidDAO {
     Bid findHighestBid(int auctionId);
     boolean updateStatus(int bidId, BidStatus status);
     boolean updateOutbid(int auctionId);
+    boolean deleteById(int id);
 }

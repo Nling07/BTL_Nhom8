@@ -131,6 +131,22 @@ public class AuctionDAOImpl implements AuctionDAO{
     }
 
     @Override
+    public boolean deleteById(int id) {
+        String sql = "DELETE FROM auctions WHERE auction_id = ?";
+
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, id);
+
+            int rows = ps.executeUpdate();
+            return rows > 0;
+        } catch (SQLException e) {
+            System.out.println("Lỗi SQL khi delete auction: " + e.getMessage());
+        }
+
+        return false;
+    }
+
+    @Override
     public List<Auction> findAll() {
         List<Auction> auctions = new ArrayList<>();
         String sql = "SELECT * FROM auctions ORDER BY auction_id";

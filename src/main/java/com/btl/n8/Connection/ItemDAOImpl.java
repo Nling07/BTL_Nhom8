@@ -99,6 +99,22 @@ public class ItemDAOImpl implements ItemDAO {
         return list;
     }
 
+    @Override
+    public boolean deleteById(int id) {
+        String sql = "DELETE FROM items WHERE item_id = ?";
+
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, id);
+
+            int rows = ps.executeUpdate();
+            return rows > 0;
+        } catch (SQLException e) {
+            System.out.println("Lỗi SQL khi delete item: " + e.getMessage());
+        }
+
+        return false;
+    }
+
     private Item mapItem(ResultSet rs) throws SQLException {
         int id = rs.getInt("item_id");
         String name = rs.getString("name");
@@ -120,4 +136,3 @@ public class ItemDAOImpl implements ItemDAO {
         return null;
     }
 }
-
