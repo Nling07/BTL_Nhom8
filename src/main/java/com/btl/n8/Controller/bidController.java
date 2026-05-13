@@ -18,6 +18,7 @@ import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
+import javafx.stage.StageStyle;
 
 import java.sql.Connection;
 import java.util.List;
@@ -133,6 +134,8 @@ public class bidController {
                         controller.initData(row.getAuctionId(), item);
 
                         Stage popup = new Stage();
+
+                        popup.initStyle(StageStyle.UNDECORATED);
 
                         popup.setTitle("Bid - " + row.getName());
 
