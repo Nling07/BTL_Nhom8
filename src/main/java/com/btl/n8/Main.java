@@ -1,37 +1,52 @@
 package com.btl.n8;
 
-import com.btl.n8.Connection.*;
-import com.btl.n8.Model.*;
-import com.btl.n8.network.ClientHandler;
 import com.btl.n8.network.ClientSocket;
-import com.btl.n8.Service.*;
-import com.mysql.cj.jdbc.ConnectionImpl;
+import com.btl.n8.network.Server1;
 import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Scene;
 import javafx.stage.Stage;
 
-import java.math.BigDecimal;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.SQLException;
-import java.util.List;
-
 public class Main extends Application {
 
     @Override
     public void start(Stage stage) throws Exception {
+
         ClientSocket.getInstance();
 
-        FXMLLoader loader = new FXMLLoader(getClass().getResource("/fxml/login.fxml"));
+        FXMLLoader loader =
+                new FXMLLoader(
+                        getClass().getResource("/fxml/login.fxml")
+                );
 
         stage.setTitle("Pokemon Auction System");
+
         stage.setScene(new Scene(loader.load()));
+
         stage.setResizable(false);
+
         stage.show();
     }
 
-    public static void main(String[] args) throws SQLException {
+    public static void main(String[] args) {
+
+        new Thread(() -> {
+
+            try {
+
+                Server1.main(new String[]{});
+
+            } catch (Exception e) {
+
+                System.out.println(
+                        "Failed to start server"
+                );
+
+                e.printStackTrace();
+            }
+
+        }).start();
+
         launch();
     }
 }

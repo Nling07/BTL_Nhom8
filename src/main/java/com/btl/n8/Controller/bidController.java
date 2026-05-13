@@ -45,6 +45,7 @@ public class bidController {
     }
 
     private void setupColumns() {
+
         colId.setCellValueFactory(new PropertyValueFactory<>("id"));
         colName.setCellValueFactory(new PropertyValueFactory<>("name"));
         colType.setCellValueFactory(new PropertyValueFactory<>("type"));
@@ -52,148 +53,316 @@ public class bidController {
         colStatus.setCellValueFactory(new PropertyValueFactory<>("status"));
 
         colAction.setCellFactory(col -> new TableCell<>() {
+
             private final Button btn = new Button("Bid");
+
             {
                 btn.setOnAction(e -> {
-                    ItemRow row = getTableView().getItems().get(getIndex());
+
+                    ItemRow row = getTableRow().getItem();
+
+                    if (row == null) {
+                        return;
+                    }
+
                     btn.setDisable(true);
+
                     openBidPopup(row, btn);
                 });
             }
+
             @Override
             protected void updateItem(Void item, boolean empty) {
+
                 super.updateItem(item, empty);
-                setGraphic(empty ? null : btn);
+
+                if (empty) {
+
+                    setGraphic(null);
+
+                } else {
+
+                    ItemRow row = getTableRow().getItem();
+
+                    btn.setDisable(row == null || row.getAuctionId() == -1);
+
+                    setGraphic(btn);
+                }
             }
         });
     }
 
     private void openBidPopup(ItemRow row, Button btn) {
+
+        if (itemService == null) {
+
+            showError("Data is still loading");
+            btn.setDisable(false);
+            return;
+        }
+
         new Thread(() -> {
+
             try {
+
                 Item item = itemService.getItemById(row.getId());
+
                 if (item == null) {
+
                     Platform.runLater(() -> {
+
                         showError("Item not found");
                         btn.setDisable(false);
                     });
+
                     return;
                 }
 
                 Platform.runLater(() -> {
+
                     try {
+
                         FXMLLoader loader = new FXMLLoader(
                                 getClass().getResource("/fxml/bidDetails.fxml"));
+
                         Parent root = loader.load();
 
-                        bidDetailController controller = loader.getController();
+                        bidDetailController controller =
+                                loader.getController();
+
                         controller.initData(row.getAuctionId(), item);
 
                         Stage popup = new Stage();
+
                         popup.setTitle("Bid - " + row.getName());
+
                         popup.setScene(new Scene(root));
+
                         popup.initModality(Modality.APPLICATION_MODAL);
+
                         popup.setResizable(false);
+
                         popup.setOnHidden(e -> btn.setDisable(false));
-                        popup.show();
+
+                        popup.showAndWait();
 
                     } catch (Exception ex) {
-                        showError("Failed to open auction: " + ex.getMessage());
+
+                        showError("Failed to open auction: "
+                                + ex.getMessage());
+
                         btn.setDisable(false);
+
                         ex.printStackTrace();
                     }
                 });
 
             } catch (Exception e) {
+
                 Platform.runLater(() -> {
-                    showError("Failed to load item: " + e.getMessage());
+
+                    showError("Failed to load item: "
+                            + e.getMessage());
+
                     btn.setDisable(false);
                 });
+
                 e.printStackTrace();
             }
+
         }).start();
     }
 
     private void loadData() {
-        new Thread(() -> {
-            try {
-                Connection conn = DataConnection.getConnection();
-                if (conn == null) throw new Exception("Database connection failed");
 
-                itemService    = new ItemService(new ItemDAOImpl(conn));
-                auctionService = new AuctionService(new AuctionDAOImpl(conn));
+        new Thread(() -> {
+
+            try {
+
+                Connection conn = DataConnection.getConnection();
+
+                if (conn == null)
+                    throw new Exception("Database connection failed");
+
+                itemService =
+                        new ItemService(new ItemDAOImpl(conn));
+
+                auctionService =
+                        new AuctionService(new AuctionDAOImpl(conn));
 
                 List<Item> items = itemService.getAllItems();
-                for (Item item : items) {
-                    Auction auction = auctionService.getAuctionByItemId(item.getId());
-                    String price    = auction != null ? auction.getCurrentPrice().toPlainString() + " ₫" : "-";
-                    String status   = auction != null ? auction.getStatus().name() : "NO AUCTION";
-                    int auctionId   = auction != null ? auction.getId() : -1;
 
-                    allItems.add(new ItemRow(
-                            item.getId(), item.getName(), item.getType().name(),
-                            price, status, auctionId
+                ObservableList<ItemRow> tempList =
+                        FXCollections.observableArrayList();
+
+                for (Item item : items) {
+
+                    Auction auction =
+                            auctionService.getAuctionByItemId(
+                                    item.getId());
+
+                    String price =
+                            auction != null
+                                    ? auction.getCurrentPrice()
+                                      .toPlainString() + " ₫"
+                                    : "-";
+
+                    String status =
+                            auction != null
+                                    ? auction.getStatus().name()
+                                    : "NO AUCTION";
+
+                    int auctionId =
+                            auction != null
+                                    ? auction.getId()
+                                    : -1;
+
+                    tempList.add(new ItemRow(
+                            item.getId(),
+                            item.getName(),
+                            item.getType().name(),
+                            price,
+                            status,
+                            auctionId
                     ));
                 }
 
-                Platform.runLater(() -> itemTable.setItems(allItems));
+                Platform.runLater(() -> {
+
+                    allItems.setAll(tempList);
+
+                    itemTable.setItems(allItems);
+                });
 
             } catch (Exception e) {
-                Platform.runLater(() -> showError("Failed to load items: " + e.getMessage()));
+
+                Platform.runLater(() ->
+                        showError("Failed to load items: "
+                                + e.getMessage()));
+
                 e.printStackTrace();
             }
+
         }).start();
     }
 
     @FXML
     public void handleSearch(ActionEvent event) {
-        String query = searchField.getText().trim();
-        if (query.isEmpty()) { itemTable.setItems(allItems); return; }
 
-        ObservableList<ItemRow> filtered = FXCollections.observableArrayList();
-        try {
-            int id = Integer.parseInt(query);
-            filtered.addAll(allItems.stream()
-                    .filter(r -> r.getId() == id)
-                    .collect(Collectors.toList()));
-        } catch (NumberFormatException e) {
-            filtered.addAll(allItems.stream()
-                    .filter(r -> r.getName().toLowerCase().contains(query.toLowerCase()))
-                    .collect(Collectors.toList()));
+        String query = searchField.getText().trim();
+
+        if (query.isEmpty()) {
+
+            itemTable.setItems(allItems);
+            return;
         }
+
+        ObservableList<ItemRow> filtered =
+                FXCollections.observableArrayList();
+
+        try {
+
+            int id = Integer.parseInt(query);
+
+            filtered.addAll(
+                    allItems.stream()
+                            .filter(r -> r.getId() == id)
+                            .collect(Collectors.toList())
+            );
+
+        } catch (NumberFormatException e) {
+
+            filtered.addAll(
+                    allItems.stream()
+                            .filter(r ->
+                                    r.getName()
+                                            .toLowerCase()
+                                            .contains(
+                                                    query.toLowerCase()
+                                            ))
+                            .collect(Collectors.toList())
+            );
+        }
+
         itemTable.setItems(filtered);
     }
 
     private void showError(String message) {
-        Alert alert = new Alert(Alert.AlertType.ERROR);
+
+        Alert alert =
+                new Alert(Alert.AlertType.ERROR);
+
         alert.setTitle("Error");
+
+        alert.setHeaderText(null);
+
         alert.setContentText(message);
+
         alert.showAndWait();
     }
 
     @FXML
     public void Return(ActionEvent event) throws Exception {
-        Parent root = FXMLLoader.load(getClass().getResource("/fxml/home.fxml"));
-        Stage stage = (Stage)((Node)event.getSource()).getScene().getWindow();
+
+        Parent root =
+                FXMLLoader.load(
+                        getClass().getResource("/fxml/home.fxml"));
+
+        Stage stage =
+                (Stage)((Node)event.getSource())
+                        .getScene()
+                        .getWindow();
+
         stage.setScene(new Scene(root));
+
         stage.show();
     }
 
     public static class ItemRow {
+
         private final int id;
         private final String name, type, price, status;
         private final int auctionId;
 
-        public ItemRow(int id, String name, String type, String price, String status, int auctionId) {
-            this.id = id; this.name = name; this.type = type;
-            this.price = price; this.status = status; this.auctionId = auctionId;
+        public ItemRow(
+                int id,
+                String name,
+                String type,
+                String price,
+                String status,
+                int auctionId
+        ) {
+
+            this.id = id;
+            this.name = name;
+            this.type = type;
+            this.price = price;
+            this.status = status;
+            this.auctionId = auctionId;
         }
 
-        public int    getId()        { return id; }
-        public String getName()      { return name; }
-        public String getType()      { return type; }
-        public String getPrice()     { return price; }
-        public String getStatus()    { return status; }
-        public int    getAuctionId() { return auctionId; }
+        public int getId() {
+            return id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public String getType() {
+            return type;
+        }
+
+        public String getPrice() {
+            return price;
+        }
+
+        public String getStatus() {
+            return status;
+        }
+
+        public int getAuctionId() {
+            return auctionId;
+        }
     }
 }
