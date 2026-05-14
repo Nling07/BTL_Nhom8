@@ -2,7 +2,7 @@ package com.btl.n8.Controller;
 
 import com.btl.n8.Connection.DataConnection;
 import com.btl.n8.Connection.UserDAOImpl;
-import com.btl.n8.Model.Bidder;
+import com.btl.n8.Model.entity.Bidder;
 
 import javafx.application.Platform;
 import javafx.concurrent.Task;

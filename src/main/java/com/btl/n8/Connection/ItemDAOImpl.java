@@ -1,6 +1,8 @@
 package com.btl.n8.Connection;
 
-import com.btl.n8.Model.*;
+import com.btl.n8.Model.entity.Item;
+import com.btl.n8.Model.mapper.ItemMapper;
+
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -50,7 +52,7 @@ public class ItemDAOImpl implements ItemDAO {
 
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
-                    return mapItem(rs);
+                    return ItemMapper.map(rs);
                 }
             }
         } catch (SQLException e) {
@@ -69,7 +71,7 @@ public class ItemDAOImpl implements ItemDAO {
              ResultSet rs = ps.executeQuery()) {
 
             while (rs.next()) {
-                list.add(mapItem(rs));
+                list.add(ItemMapper.map(rs));
             }
 
         } catch (SQLException e) {
@@ -89,7 +91,7 @@ public class ItemDAOImpl implements ItemDAO {
 
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
-                    list.add(mapItem(rs));
+                    list.add(ItemMapper.map(rs));
                 }
             }
         } catch (SQLException e) {
@@ -115,24 +117,4 @@ public class ItemDAOImpl implements ItemDAO {
         return false;
     }
 
-    private Item mapItem(ResultSet rs) throws SQLException {
-        int id = rs.getInt("item_id");
-        String name = rs.getString("name");
-        int sellerId = rs.getInt("seller_id");
-        String typeStr = rs.getString("type");
-        ItemType type = ItemType.valueOf(typeStr);
-
-        byte[] image = rs.getBytes("image"); // đọc ảnh từ DB
-
-        switch (type) {
-            case POSTER:
-                return new Poster(id, name, sellerId, image);
-            case FIGURE:
-                return new Figure(id, name, sellerId, image);
-            case CARD:
-                return new Card(id, name, sellerId, image);
-        }
-
-        return null;
-    }
 }

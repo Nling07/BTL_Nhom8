@@ -1,7 +1,7 @@
 package com.btl.n8.Connection;
 
-import com.btl.n8.Model.Bid;
-import com.btl.n8.Model.BidStatus;
+import com.btl.n8.Model.entity.Bid;
+import com.btl.n8.Model.enums.BidStatus;
 
 import java.util.List;
 

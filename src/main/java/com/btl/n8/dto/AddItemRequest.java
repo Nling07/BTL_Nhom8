@@ -1,6 +1,6 @@
 package com.btl.n8.dto;
 
-import com.btl.n8.Model.ItemType;
+import com.btl.n8.Model.enums.ItemType;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 

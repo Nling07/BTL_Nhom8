@@ -1,8 +1,11 @@
 package com.btl.n8.network;
 
 import com.btl.n8.Connection.*;
+import com.btl.n8.Model.entity.Auction;
+import com.btl.n8.Model.entity.Bidder;
+import com.btl.n8.Model.entity.User;
+import com.btl.n8.Model.enums.AuctionStatus;
 import com.btl.n8.dto.*;
-import com.btl.n8.Model.*;
 import com.btl.n8.Service.*;
 import com.google.gson.*;
 
@@ -13,7 +16,7 @@ import java.sql.Connection;
 import java.time.LocalDateTime;
 import java.util.concurrent.ConcurrentHashMap;
 import com.btl.n8.util.LocalDateTimeAdapter;
-import java.time.LocalDateTime;
+
 public class ClientHandler implements Runnable {
 
     private final Socket socket;

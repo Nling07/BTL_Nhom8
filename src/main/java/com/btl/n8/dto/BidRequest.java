@@ -1,6 +1,6 @@
 package com.btl.n8.dto;
 
-import com.btl.n8.Model.BidStatus;
+import com.btl.n8.Model.enums.BidStatus;
 
 import java.math.BigDecimal;
 

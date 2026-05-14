@@ -1,6 +1,8 @@
-package com.btl.n8.Model;
+package com.btl.n8.Model.entity;
 
-public class Admin extends User{
+import com.btl.n8.Model.enums.Role;
+
+public class Admin extends User {
     public Admin(String account, String password) {
         super(account, password, Role.ADMIN);
     }

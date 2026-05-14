@@ -1,8 +1,9 @@
 package com.btl.n8.Controller;
 
 import com.btl.n8.Connection.*;
-import com.btl.n8.dto.AddItemRequest;
-import com.btl.n8.Model.*;
+import com.btl.n8.Model.entity.Auction;
+import com.btl.n8.Model.entity.Item;
+import com.btl.n8.Model.enums.AuctionStatus;
 import com.btl.n8.Service.AuctionService;
 import com.btl.n8.util.FileUtils;
 import com.btl.n8.Service.ItemService;

@@ -1,6 +1,6 @@
 package com.btl.n8.dto;
 
-import com.btl.n8.Model.Role;
+import com.btl.n8.Model.enums.Role;
 import java.math.BigDecimal;
 
 public class LoginResponse extends Response {

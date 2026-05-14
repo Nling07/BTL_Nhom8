@@ -1,11 +1,25 @@
 package com.btl.n8.Connection;
-import com.btl.n8.Model.*;
+import com.btl.n8.Model.entity.Admin;
+import com.btl.n8.Model.entity.Bidder;
+import com.btl.n8.Model.entity.Seller;
+import com.btl.n8.Model.entity.User;
+import com.btl.n8.Model.enums.Role;
+import com.btl.n8.Model.mapper.UserMapper;
 
 import java.math.BigDecimal;
 import java.sql.*;
 
 public class UserDAOImpl implements UserDAO {
     private final Connection conn;
+    private static final String BASE_SELECT = """
+    SELECT u.user_id, u.account, u.password, u.role,
+           b.balance,
+           s.seller_id
+    FROM users u
+    LEFT JOIN bidders b ON u.user_id = b.user_id
+    LEFT JOIN sellers s ON u.user_id = s.seller_id
+""";
+
     public UserDAOImpl(Connection conn){
         this.conn = conn;
     }
@@ -58,6 +72,14 @@ public class UserDAOImpl implements UserDAO {
             }
 
             System.out.println("Lỗi transaction: " + e.getMessage());
+        }
+        finally {
+
+            try {
+                conn.setAutoCommit(true);
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
         }
 
         return false;
@@ -193,22 +215,14 @@ public class UserDAOImpl implements UserDAO {
 
     @Override
     public User findByAccount(String account) {
-        String sql = """
-        SELECT u.user_id, u.account, u.password, u.role,
-               b.balance,
-               s.seller_id
-        FROM users u
-        LEFT JOIN bidders b ON u.user_id = b.user_id
-        LEFT JOIN sellers s ON u.user_id = s.seller_id
-        WHERE u.account = ?
-    """;
+        String sql = BASE_SELECT + " WHERE u.account = ? ";
 
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, account);
 
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
-                    return mapUser(rs);
+                    return UserMapper.map(rs);
                 }
             }
         } catch (SQLException e) {
@@ -220,22 +234,14 @@ public class UserDAOImpl implements UserDAO {
 
     @Override
     public User findById(int id) {
-        String sql = """
-        SELECT u.user_id, u.account, u.password, u.role,
-               b.balance,
-               s.seller_id
-        FROM users u
-        LEFT JOIN bidders b ON u.user_id = b.user_id
-        LEFT JOIN sellers s ON u.user_id = s.seller_id
-        WHERE u.user_id = ?
-    """;
+        String sql = BASE_SELECT + " WHERE u.user_id = ?";
 
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, id);
 
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
-                    return mapUser(rs);
+                    return UserMapper.map(rs);
                 }
             }
         } catch (SQLException e) {
@@ -245,24 +251,6 @@ public class UserDAOImpl implements UserDAO {
         return null;
     }
 
-    private User mapUser(ResultSet rs) throws SQLException {
-        int id = rs.getInt("user_id");
-        String account = rs.getString("account");
-        String password = rs.getString("password");
-        String role = rs.getString("role");
-
-        if ("BIDDER".equals(role)) {
-            BigDecimal balance = rs.getBigDecimal("balance");
-            if (balance == null) balance = BigDecimal.ZERO;
-            return new Bidder(id, account, password, balance);
-
-        } else if ("SELLER".equals(role)) {
-            return new Seller(id, account, password);
-
-        } else {
-            return new Admin(id, account, password);
-        }
-    }
 
     private boolean insertUser(User user) {
 

@@ -1,6 +1,6 @@
 package com.btl.n8.Connection;
 
-import com.btl.n8.Model.Item;
+import com.btl.n8.Model.entity.Item;
 
 import java.util.List;
 

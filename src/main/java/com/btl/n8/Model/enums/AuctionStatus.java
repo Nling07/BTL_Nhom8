@@ -1,4 +1,4 @@
-package com.btl.n8.Model;
+package com.btl.n8.Model.enums;
 
 public enum AuctionStatus {
     OPEN,

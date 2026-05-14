@@ -1,24 +1,28 @@
-package com.btl.n8.Model;
+package com.btl.n8.Model.entity;
+
+import com.btl.n8.Model.enums.Role;
 
 import java.math.BigDecimal;
 
-public abstract class User {
-    protected int id;
+public abstract class User extends Entity {
     protected String account;
     protected String password;
     protected Role role;
     protected BigDecimal balance;
 
-    public User(){}
+    public User(){
+        super();
+    }
+
     public User(int id, String account, String password, Role role){
-        this.id = id;
+        super(id);
         this.account = account;
         this.password = password;
         this.role = role;
     }
-    //thêm constructor để có balance.
-    public User(int id, String account, String password, Role role,BigDecimal balance){
-        this.id = id;
+
+    public User(int id, String account, String password, Role role, BigDecimal balance){
+        super(id);
         this.account = account;
         this.password = password;
         this.role = role;
@@ -32,9 +36,6 @@ public abstract class User {
     }
 
     // Setter
-    public void setId(int id){
-        this.id = id;
-    }
     public void setAccount(String account){
         this.account = account;
     }
@@ -44,12 +45,12 @@ public abstract class User {
     public void setRole(Role role){
         this.role = role;
     }
+    public void setBalance(BigDecimal balance){
+        this.balance = balance;
+    }
 
 
     // Getter
-    public int getId(){
-        return id;
-    }
     public String getAccount(){
         return account;
     }

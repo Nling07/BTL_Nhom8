@@ -1,8 +1,8 @@
 package com.btl.n8.Service;
 
 import com.btl.n8.Connection.BidDAO;
-import com.btl.n8.Model.Bid;
-import com.btl.n8.Model.BidStatus;
+import com.btl.n8.Model.entity.Bid;
+import com.btl.n8.Model.enums.BidStatus;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;

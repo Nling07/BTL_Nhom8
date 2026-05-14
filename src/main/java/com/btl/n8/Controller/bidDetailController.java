@@ -1,7 +1,10 @@
 package com.btl.n8.Controller;
 
 import com.btl.n8.Connection.*;
-import com.btl.n8.Model.*;
+import com.btl.n8.Model.entity.Auction;
+import com.btl.n8.Model.entity.Bid;
+import com.btl.n8.Model.entity.Item;
+import com.btl.n8.Model.enums.AuctionStatus;
 import com.btl.n8.Service.AuctionService;
 import com.btl.n8.Service.BidService;
 import com.btl.n8.dto.BidRequest;
@@ -27,7 +30,6 @@ import com.btl.n8.util.LocalDateTimeAdapter;
 import java.time.LocalDateTime;
 import java.math.BigDecimal;
 import java.sql.Connection;
-import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Timer;

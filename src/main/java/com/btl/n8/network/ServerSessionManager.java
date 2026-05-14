@@ -1,6 +1,6 @@
 package com.btl.n8.network;
 
-import com.btl.n8.Model.User;
+import com.btl.n8.Model.entity.User;
 
 import java.util.Map;
 import java.util.UUID;

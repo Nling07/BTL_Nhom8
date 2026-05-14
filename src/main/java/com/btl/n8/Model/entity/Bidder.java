@@ -1,4 +1,6 @@
-package com.btl.n8.Model;
+package com.btl.n8.Model.entity;
+import com.btl.n8.Model.enums.Role;
+
 import java.math.BigDecimal;
 public class Bidder extends User {
     private BigDecimal balance;

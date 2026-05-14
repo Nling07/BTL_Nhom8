@@ -1,6 +1,7 @@
-package com.btl.n8.Model;
-import java.util.ArrayList;
-public class Seller extends User{
+package com.btl.n8.Model.entity;
+import com.btl.n8.Model.enums.Role;
+
+public class Seller extends User {
     public Seller(){}
 
     public Seller(String account, String password) {

@@ -1,23 +1,18 @@
 package com.btl.n8.Controller;
 
 import com.btl.n8.Connection.*;
-import com.btl.n8.Model.*;
+import com.btl.n8.Model.entity.Bid;
+import com.btl.n8.Model.entity.User;
 import com.btl.n8.Service.BidService;
 
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
-import javafx.fxml.FXMLLoader;
-import javafx.scene.Parent;
-import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
 import javafx.stage.Stage;
-import javafx.event.ActionEvent;
-import javafx.scene.Node;
 
-import java.math.BigDecimal;
 import java.sql.Connection;
 import java.time.format.DateTimeFormatter;
 import java.util.List;

@@ -23,4 +23,10 @@ module com.btl.n8 {
     exports com.btl.n8.Model;
     exports com.btl.n8.Service;
     exports com.btl.n8.Connection;
+    exports com.btl.n8.Model.entity;
+    opens com.btl.n8.Model.entity to com.google.gson;
+    exports com.btl.n8.Model.enums;
+    opens com.btl.n8.Model.enums to com.google.gson;
+    exports com.btl.n8.Model.mapper;
+    opens com.btl.n8.Model.mapper to com.google.gson;
 }
