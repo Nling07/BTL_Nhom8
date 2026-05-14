@@ -1,17 +1,97 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<?import java.lang.*?>
-<?import java.util.*?>
-<?import javafx.scene.*?>
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
+<?import javafx.scene.text.*?>
 
-<AnchorPane xmlns="http://javafx.com/javafx"
-            xmlns:fx="http://javafx.com/fxml"
-            fx:controller="com.btl.n8.Controller.accounthomeController"
-            prefHeight="400.0" prefWidth="600.0">
-    <children>
-        <Label fx:id="userInfoLabel" layoutX="50.0" layoutY="50.0" prefHeight="30.0" prefWidth="500.0" text="" />
-        <Button layoutX="50.0" layoutY="100.0" mnemonicParsing="false" onAction="#Return" prefHeight="25.0" prefWidth="100.0" text="Back to Home" />
-    </children>
-</AnchorPane>
+<VBox spacing="0"
+      xmlns="http://javafx.com/javafx/25"
+      xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.btl.n8.Controller.accounthomeController"
+      prefWidth="500.0"
+      style="-fx-background-color: #0d1b2a; -fx-background-radius: 10; -fx-border-color: #1a3a5c; -fx-border-radius: 10; -fx-border-width: 1;">
+
+    <!-- Header -->
+    <HBox alignment="CENTER_LEFT"
+          style="-fx-padding: 14 18 14 18; -fx-border-color: #1a3a5c; -fx-border-width: 0 0 1 0; -fx-background-color: #0a1628; -fx-background-radius: 10 10 0 0;">
+        <Label text="My Account" textFill="#00ff88">
+            <font><Font name="Press Start 2P" size="12.0"/></font>
+        </Label>
+        <Region HBox.hgrow="ALWAYS"/>
+        <Button text="✕" onAction="#handleClose"
+                style="-fx-background-color: transparent; -fx-border-color: transparent; -fx-text-fill: #00ff88; -fx-font-size: 16px; -fx-cursor: hand;"/>
+    </HBox>
+
+    <!-- Body -->
+    <VBox style="-fx-padding: 20 18 20 18;" spacing="0">
+
+        <!-- Avatar + Info row -->
+        <HBox spacing="16" alignment="CENTER_LEFT"
+              style="-fx-padding: 0 0 16 0; -fx-border-color: #1a3a5c; -fx-border-width: 0 0 1 0;">
+            <Label fx:id="avatarLabel" text="??"
+                   style="-fx-background-color: #1a3a5c; -fx-text-fill: #00ff88; -fx-background-radius: 30; -fx-min-width: 60; -fx-min-height: 60; -fx-max-width: 60; -fx-max-height: 60; -fx-alignment: center; -fx-border-color: #00ff88; -fx-border-radius: 30; -fx-border-width: 2;">
+                <font><Font name="Press Start 2P" size="13.0"/></font>
+            </Label>
+            <VBox spacing="8">
+                <Label fx:id="usernameLabel" text="-" textFill="#ffd700">
+                    <font><Font name="Press Start 2P" size="11.0"/></font>
+                </Label>
+                <Label fx:id="roleLabel" text="-"
+                       style="-fx-background-color: #1a3a5c; -fx-text-fill: #7ecfff; -fx-padding: 3 10 3 10; -fx-background-radius: 99;">
+                    <font><Font name="Press Start 2P" size="8.0"/></font>
+                </Label>
+            </VBox>
+        </HBox>
+
+        <!-- ID -->
+        <HBox spacing="10" alignment="CENTER_LEFT"
+              style="-fx-padding: 10 0 10 0; -fx-border-color: #112240; -fx-border-width: 0 0 1 0;">
+            <Label text="ID" textFill="#7ecfff" minWidth="70">
+                <font><Font name="Press Start 2P" size="8.0"/></font>
+            </Label>
+            <Label fx:id="idLabel" text="-" textFill="#ffffff">
+                <font><Font name="Press Start 2P" size="9.0"/></font>
+            </Label>
+        </HBox>
+
+        <!-- Username -->
+        <HBox spacing="10" alignment="CENTER_LEFT"
+              style="-fx-padding: 10 0 10 0; -fx-border-color: #112240; -fx-border-width: 0 0 1 0;">
+            <Label text="Username" textFill="#7ecfff" minWidth="70">
+                <font><Font name="Press Start 2P" size="8.0"/></font>
+            </Label>
+            <Label fx:id="usernameLabel2" text="-" textFill="#ffffff">
+                <font><Font name="Press Start 2P" size="9.0"/></font>
+            </Label>
+        </HBox>
+
+        <!-- Role -->
+        <HBox spacing="10" alignment="CENTER_LEFT"
+              style="-fx-padding: 10 0 10 0;">
+            <Label text="Role" textFill="#7ecfff" minWidth="70">
+                <font><Font name="Press Start 2P" size="8.0"/></font>
+            </Label>
+            <Label fx:id="roleLabel2" text="-" textFill="#ffffff">
+                <font><Font name="Press Start 2P" size="9.0"/></font>
+            </Label>
+        </HBox>
+
+        <!-- Bid history title -->
+        <Label text="Bid history" textFill="#00ff88"
+               style="-fx-padding: 16 0 10 0; -fx-border-color: #1a3a5c; -fx-border-width: 1 0 0 0;">
+            <font><Font name="Press Start 2P" size="9.0"/></font>
+        </Label>
+
+        <!-- Bid history table -->
+        <TableView fx:id="bidTable" prefHeight="200.0"
+                   stylesheets="@../css/style.css">
+            <columns>
+                <TableColumn fx:id="colItem"   text="Item"   prefWidth="160.0"/>
+                <TableColumn fx:id="colAmount" text="Amount" prefWidth="110.0"/>
+                <TableColumn fx:id="colTime"   text="Time"   prefWidth="80.0"/>
+                <TableColumn fx:id="colStatus" text="Status" prefWidth="90.0"/>
+            </columns>
+        </TableView>
+
+    </VBox>
+</VBox>
