@@ -1,8 +1,11 @@
 package com.btl.n8.network;
 
 import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.btl.n8.util.LocalDateTimeAdapter;
+import java.time.LocalDateTime;
 
 import java.io.*;
 import java.net.Socket;
@@ -18,7 +21,9 @@ public class ClientSocket {
 
     private static final String SERVER_IP   = "localhost";
     private static final int    SERVER_PORT = 9090;
-    private static final Gson   gson        = new Gson();
+    private static final Gson gson = new GsonBuilder()
+            .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
+            .create();
 
     // CopyOnWriteArrayList — thread-safe khi iterate
     private final List<ServerResponseListener> listeners = new CopyOnWriteArrayList<>();

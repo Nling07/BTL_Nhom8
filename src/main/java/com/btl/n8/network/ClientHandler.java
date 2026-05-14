@@ -4,10 +4,7 @@ import com.btl.n8.Connection.*;
 import com.btl.n8.dto.*;
 import com.btl.n8.Model.*;
 import com.btl.n8.Service.*;
-import com.google.gson.Gson;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
-import com.google.gson.JsonSyntaxException;
+import com.google.gson.*;
 
 import java.io.*;
 import java.math.BigDecimal;
@@ -15,7 +12,8 @@ import java.net.Socket;
 import java.sql.Connection;
 import java.time.LocalDateTime;
 import java.util.concurrent.ConcurrentHashMap;
-
+import com.btl.n8.util.LocalDateTimeAdapter;
+import java.time.LocalDateTime;
 public class ClientHandler implements Runnable {
 
     private final Socket socket;
@@ -24,7 +22,9 @@ public class ClientHandler implements Runnable {
     private final ConcurrentHashMap<String, ClientHandler> clients;
     private final String token;
 
-    private static final Gson gson = new Gson();
+    private static final Gson gson = new GsonBuilder()
+            .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
+            .create();
 
     private AuctionService auctionService;
     private UserService userService;

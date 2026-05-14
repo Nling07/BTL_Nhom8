@@ -36,6 +36,10 @@ public class BidService {
         return bidDAO.findByAuction(auctionId);
     }
 
+    public List<Bid> getBidsByBidder(int bidderId) { // thêm
+        return bidDAO.findByBidder(bidderId);
+    }
+
     public Bid getHighestBid(int auctionId) {
         return bidDAO.findHighestBid(auctionId);
     }
@@ -52,7 +56,6 @@ public class BidService {
         return false;
     }
 
-    // Xóa bid theo id
     public boolean deleteBidById(int id) {
         return bidDAO.deleteById(id);
     }

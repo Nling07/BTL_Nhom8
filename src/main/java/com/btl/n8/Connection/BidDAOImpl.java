@@ -19,9 +19,9 @@ public class BidDAOImpl implements BidDAO {
     @Override
     public boolean insert(Bid bid) {
         String sql = """
-        INSERT INTO bids(auction_id, bidder_id, amount, bid_time, status)
-        VALUES (?, ?, ?, ?, ?)
-    """;
+            INSERT INTO bids(auction_id, bidder_id, amount, bid_time, status)
+            VALUES (?, ?, ?, ?, ?)
+        """;
 
         try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setInt(1, bid.getAuctionId());
@@ -31,12 +31,9 @@ public class BidDAOImpl implements BidDAO {
             ps.setString(5, bid.getStatus().name());
 
             int rows = ps.executeUpdate();
-
             if (rows > 0) {
                 try (ResultSet rs = ps.getGeneratedKeys()) {
-                    if (rs.next()) {
-                        bid.setId(rs.getInt(1));
-                    }
+                    if (rs.next()) bid.setId(rs.getInt(1));
                 }
                 return true;
             }
@@ -45,7 +42,6 @@ public class BidDAOImpl implements BidDAO {
         } catch (SQLException e) {
             System.out.println("Lỗi SQL khi insert bid: " + e.getMessage());
         }
-
         return false;
     }
 
@@ -56,40 +52,48 @@ public class BidDAOImpl implements BidDAO {
 
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, auctionId);
-
             try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) {
-                    list.add(mapBid(rs));
-                }
+                while (rs.next()) list.add(mapBid(rs));
             }
         } catch (SQLException e) {
             System.out.println("Lỗi SQL khi findByAuction: " + e.getMessage());
         }
+        return list;
+    }
 
+    @Override
+    public List<Bid> findByBidder(int bidderId) {
+        List<Bid> list = new ArrayList<>();
+        String sql = "SELECT * FROM bids WHERE bidder_id = ? ORDER BY bid_time DESC";
+
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, bidderId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) list.add(mapBid(rs));
+            }
+        } catch (SQLException e) {
+            System.out.println("Lỗi SQL khi findByBidder: " + e.getMessage());
+        }
         return list;
     }
 
     @Override
     public Bid findHighestBid(int auctionId) {
         String sql = """
-        SELECT * FROM bids 
-        WHERE auction_id = ?
-        ORDER BY amount DESC
-        LIMIT 1
-    """;
+            SELECT * FROM bids
+            WHERE auction_id = ?
+            ORDER BY amount DESC
+            LIMIT 1
+        """;
 
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, auctionId);
-
             try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) {
-                    return mapBid(rs);
-                }
+                if (rs.next()) return mapBid(rs);
             }
         } catch (SQLException e) {
             System.out.println("Lỗi SQL khi findHighestBid: " + e.getMessage());
         }
-
         return null;
     }
 
@@ -100,32 +104,28 @@ public class BidDAOImpl implements BidDAO {
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, status.name());
             ps.setInt(2, bidId);
-
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
             System.out.println("Lỗi SQL khi update status: " + e.getMessage());
         }
-
         return false;
     }
 
     @Override
     public boolean updateOutbid(int auctionId) {
         String sql = """
-        UPDATE bids 
-        SET status = 'OUTBID' 
-        WHERE auction_id = ? AND status = 'ACTIVE'
-    """;
+            UPDATE bids
+            SET status = 'OUTBID'
+            WHERE auction_id = ? AND status = 'ACTIVE'
+        """;
 
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, auctionId);
-
             ps.executeUpdate();
             return true;
         } catch (SQLException e) {
             System.out.println("Lỗi SQL khi update OUTBID: " + e.getMessage());
         }
-
         return false;
     }
 
@@ -135,26 +135,20 @@ public class BidDAOImpl implements BidDAO {
 
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, id);
-
-            int rows = ps.executeUpdate();
-            return rows > 0;
+            return ps.executeUpdate() > 0;
         } catch (SQLException e) {
             System.out.println("Lỗi SQL khi delete bid: " + e.getMessage());
         }
-
         return false;
     }
 
     private Bid mapBid(ResultSet rs) throws SQLException {
-        int id = rs.getInt("bid_id");
+        int id        = rs.getInt("bid_id");
         int auctionId = rs.getInt("auction_id");
-        int bidderId = rs.getInt("bidder_id");
-
-        BigDecimal amount = rs.getBigDecimal("amount");
-        LocalDateTime bidTime = rs.getTimestamp("bid_time").toLocalDateTime();
-
-        BidStatus status = BidStatus.valueOf(rs.getString("status"));
-
-        return new Bid(id, auctionId, bidderId, amount, bidTime, status);
+        int bidderId  = rs.getInt("bidder_id");
+        BigDecimal amount   = rs.getBigDecimal("amount");
+        LocalDateTime time  = rs.getTimestamp("bid_time").toLocalDateTime();
+        BidStatus status    = BidStatus.valueOf(rs.getString("status"));
+        return new Bid(id, auctionId, bidderId, amount, time, status);
     }
 }

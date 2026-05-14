@@ -9,6 +9,7 @@ import com.btl.n8.dto.BidResponse;
 import com.btl.n8.network.ClientSocket;
 import com.btl.n8.network.ServerResponseListener;
 import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 
 import javafx.application.Platform;
@@ -22,7 +23,8 @@ import javafx.scene.control.TextField;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.stage.Stage;
-
+import com.btl.n8.util.LocalDateTimeAdapter;
+import java.time.LocalDateTime;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.time.LocalDateTime;
@@ -50,7 +52,9 @@ public class bidDetailController implements ServerResponseListener {
     private int bidderId;
     private Auction auction;
     private Timer countdownTimer;
-    private static final Gson gson = new Gson();
+    private static final Gson gson = new GsonBuilder()
+            .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
+            .create();
 
     private AuctionService auctionService;
     private BidService bidService;

@@ -35,10 +35,16 @@ public class homeController {
 
     public void account(ActionEvent event) throws Exception {
         if (!SessionManager.getInstance().isLoggedIn()) return;
-        Parent root = FXMLLoader.load(getClass().getResource("/fxml/account.fxml"));
-        Stage stage = (Stage)((Node)event.getSource()).getScene().getWindow();
-        stage.setScene(new Scene(root));
-        stage.show();
+
+        FXMLLoader loader = new FXMLLoader(getClass().getResource("/fxml/account.fxml"));
+        Parent root = loader.load();
+
+        Stage popup = new Stage();
+        popup.setTitle("My Account");
+        popup.setScene(new Scene(root));
+        popup.initModality(javafx.stage.Modality.APPLICATION_MODAL);
+        popup.setResizable(false);
+        popup.show();
     }
 
     public void logout(ActionEvent event) throws Exception {
@@ -48,4 +54,5 @@ public class homeController {
         stage.setScene(new Scene(root));
         stage.show();
     }
+
 }

@@ -8,6 +8,7 @@ import java.util.List;
 public interface BidDAO {
     boolean insert(Bid bid);
     List<Bid> findByAuction(int auctionId);
+    List<Bid> findByBidder(int bidderId); // thêm
     Bid findHighestBid(int auctionId);
     boolean updateStatus(int bidId, BidStatus status);
     boolean updateOutbid(int auctionId);
