@@ -1,5 +1,6 @@
 package com.btl.n8.Connection;
 
+import com.btl.n8.Controller.bidController.ItemAuctionRow;
 import com.btl.n8.Model.Auction;
 import com.btl.n8.Model.AuctionStatus;
 
@@ -9,12 +10,69 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-public class AuctionDAOImpl implements AuctionDAO{
+public class AuctionDAOImpl implements AuctionDAO {
     private final Connection conn;
 
     public AuctionDAOImpl(Connection conn) {
         this.conn = conn;
     }
+
+    // ── THÊM MỚI: JOIN query 1 lần thay vì N+1 ─────────────────────────────────
+    /**
+     * FIX N+1 QUERY: Thay vì controller gọi getAllItems() rồi loop gọi
+     * getAuctionByItemId() cho từng item (= 1 + N round-trip đến DB),
+     * ta dùng LEFT JOIN để lấy hết trong 1 query duy nhất.
+     *
+     * LEFT JOIN để item chưa có auction vẫn xuất hiện trong danh sách
+     * (auction columns sẽ là NULL, controller hiển thị "-" và "NO AUCTION").
+     */
+    public List<ItemAuctionRow> findAllWithItems() {
+        List<ItemAuctionRow> result = new ArrayList<>();
+
+        String sql = """
+            SELECT
+                i.item_id,
+                i.name       AS item_name,
+                i.type       AS item_type,
+                a.auction_id,
+                a.current_price,
+                a.status
+            FROM items i
+            LEFT JOIN auctions a ON a.item_id = i.item_id
+            ORDER BY i.item_id
+        """;
+
+        try (PreparedStatement ps = conn.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+
+            while (rs.next()) {
+                int itemId          = rs.getInt("item_id");
+                String itemName     = rs.getString("item_name");
+                String itemType     = rs.getString("item_type");
+
+                // auction columns có thể NULL (LEFT JOIN)
+                int auctionId       = rs.getInt("auction_id");     // 0 nếu NULL
+                boolean hasAuction  = !rs.wasNull();
+                BigDecimal price    = rs.getBigDecimal("current_price");
+                String status       = rs.getString("status");
+
+                result.add(new ItemAuctionRow(
+                        itemId,
+                        itemName,
+                        itemType,
+                        hasAuction ? price  : null,
+                        hasAuction ? status : null,
+                        hasAuction ? auctionId : -1
+                ));
+            }
+
+        } catch (SQLException e) {
+            System.out.println("Lỗi SQL khi findAllWithItems: " + e.getMessage());
+        }
+
+        return result;
+    }
+    // ────────────────────────────────────────────────────────────────────────────
 
     @Override
     public boolean insert(Auction auction) {
@@ -104,9 +162,7 @@ public class AuctionDAOImpl implements AuctionDAO{
             ps.setString(5, auction.getStatus().name());
             ps.setInt(6, auction.getId());
 
-            int rows = ps.executeUpdate();
-
-            return rows > 0;
+            return ps.executeUpdate() > 0;
         } catch (SQLException e) {
             System.out.println("Lỗi SQL khi update auction: " + e.getMessage());
         }
@@ -137,8 +193,7 @@ public class AuctionDAOImpl implements AuctionDAO{
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, id);
 
-            int rows = ps.executeUpdate();
-            return rows > 0;
+            return ps.executeUpdate() > 0;
         } catch (SQLException e) {
             System.out.println("Lỗi SQL khi delete auction: " + e.getMessage());
         }
@@ -170,10 +225,10 @@ public class AuctionDAOImpl implements AuctionDAO{
         int itemId = rs.getInt("item_id");
 
         BigDecimal startingPrice = rs.getBigDecimal("starting_price");
-        BigDecimal currentPrice = rs.getBigDecimal("current_price");
+        BigDecimal currentPrice  = rs.getBigDecimal("current_price");
 
         LocalDateTime startTime = rs.getTimestamp("start_time").toLocalDateTime();
-        LocalDateTime endTime = rs.getTimestamp("end_time").toLocalDateTime();
+        LocalDateTime endTime   = rs.getTimestamp("end_time").toLocalDateTime();
 
         AuctionStatus status = AuctionStatus.valueOf(rs.getString("status"));
 
