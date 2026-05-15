@@ -17,15 +17,21 @@ import com.google.gson.JsonObject;
 
 import javafx.application.Platform;
 import javafx.fxml.FXML;
+import javafx.fxml.FXMLLoader;
+import javafx.scene.Parent;
+import javafx.scene.Scene;
 import javafx.scene.chart.CategoryAxis;
 import javafx.scene.chart.LineChart;
 import javafx.scene.chart.NumberAxis;
 import javafx.scene.chart.XYChart;
+import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.stage.Modality;
 import javafx.stage.Stage;
+import javafx.stage.StageStyle;
 import com.btl.n8.util.LocalDateTimeAdapter;
 import java.time.LocalDateTime;
 import java.math.BigDecimal;
@@ -49,10 +55,12 @@ public class bidDetailController implements ServerResponseListener {
     @FXML private LineChart<String, Number> bidChart;
     @FXML private CategoryAxis xAxis;
     @FXML private NumberAxis yAxis;
+    @FXML private Button autoBidButton;
 
     private int auctionId;
     private int bidderId;
     private Auction auction;
+    private Item item;   // keep reference for AutoBid popup
     private Timer countdownTimer;
     private static final Gson gson = new GsonBuilder()
             .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
@@ -61,28 +69,30 @@ public class bidDetailController implements ServerResponseListener {
     private AuctionService auctionService;
     private BidService bidService;
 
+    /**
+     * Được gọi từ bidController (trên FX thread) ngay sau loader.load().
+     *
+     * FIX BUG #1: Tách initData thành 2 bước:
+     *   1. Set các field từ Item (không cần DB) ngay lập tức trên FX thread.
+     *   2. Chạy toàn bộ DB call trong background thread, chỉ update UI
+     *      trong Platform.runLater() khi có kết quả.
+     *
+     * Trước đây toàn bộ DataConnection.getConnection() + getAuctionById()
+     * chạy trên FX thread → UI đơ.
+     */
     public void initData(int auctionId, Item item) {
         this.auctionId = auctionId;
         this.bidderId  = SessionManager.getInstance().getCurrentUser().getId();
+        this.item      = item;   // store for AutoBid popup
 
-        try {
-            Connection conn = DataConnection.getConnection();
-            if (conn == null) throw new Exception("Database connection failed");
-
-            auctionService = new AuctionService(new AuctionDAOImpl(conn));
-            bidService     = new BidService(new BidDAOImpl(conn));
-            auction        = auctionService.getAuctionById(auctionId);
-
-        } catch (Exception e) {
-            showMsg("Failed to load data. Please try again.", false);
-            e.printStackTrace();
-            return;
-        }
-
+        // ── Bước 1: Set UI từ Item ngay (không cần DB, không block) ──────────
         itemName.setText(item.getName());
         itemId.setText("#" + item.getId());
         itemType.setText(item.getType().name());
-        updateAuctionStatus();
+        timerLabel.setText("Loading...");
+        currentPrice.setText("Loading...");
+        itemStatus.setText("-");
+        bidInput.setDisable(true); // disable cho đến khi load xong
 
         if (item.getImage() != null && item.getImage().length > 0) {
             try {
@@ -93,19 +103,44 @@ public class bidDetailController implements ServerResponseListener {
             }
         }
 
-        loadChart();
-
-        if (auction != null) {
-            if (LocalDateTime.now().isAfter(auction.getEndTime())) {
-                bidInput.setDisable(true);
-                timerLabel.setText("Ended");
-                reloadAuction();
-            } else {
-                startCountdown(auction.getEndTime());
-            }
-        }
-
+        // Đăng ký lắng nghe broadcast ngay (trước khi load DB xong)
         ClientSocket.getInstance().addListener(this);
+
+        // ── Bước 2: Load DB trong background thread ───────────────────────────
+        new Thread(() -> {
+            try {
+                Connection conn = DataConnection.getConnection();
+                if (conn == null) throw new Exception("Database connection failed");
+
+                auctionService = new AuctionService(new AuctionDAOImpl(conn));
+                bidService     = new BidService(new BidDAOImpl(conn));
+                Auction loaded = auctionService.getAuctionById(auctionId);
+
+                // Kết quả DB → về FX thread để update UI
+                Platform.runLater(() -> {
+                    auction = loaded;
+                    updateAuctionStatus();
+                    loadChart();
+
+                    if (auction != null) {
+                        if (LocalDateTime.now().isAfter(auction.getEndTime())) {
+                            bidInput.setDisable(true);
+                            timerLabel.setText("Ended");
+                            reloadAuction();
+                        } else {
+                            startCountdown(auction.getEndTime());
+                        }
+                    }
+                });
+
+            } catch (Exception e) {
+                Platform.runLater(() -> {
+                    showMsg("Failed to load data. Please try again.", false);
+                    timerLabel.setText("Error");
+                });
+                e.printStackTrace();
+            }
+        }).start();
     }
 
     private void updateAuctionStatus() {
@@ -225,8 +260,21 @@ public class bidDetailController implements ServerResponseListener {
         }).start();
     }
 
+    /**
+     * Nhận broadcast BID_UPDATE từ server.
+     *
+     * FIX: BidResponse đã chứa currentPrice mới do server tính và gửi về.
+     * Version cũ bỏ qua giá đó, lại gọi thêm auctionService.getAuctionById()
+     * (1 DB roundtrip nữa) → delay, hoặc crash NullPointerException nếu
+     * auctionService chưa init xong (race condition với initData background thread).
+     *
+     * Fix: dùng res.getCurrentPrice() trực tiếp để update label ngay lập tức,
+     * sau đó mới loadChart() trong background (không block UI).
+     * Không cần DB call trong onRespone nữa.
+     */
     @Override
     public void onRespone(JsonObject response) {
+        if (!response.has("action")) return;
         String action = response.get("action").getAsString();
         if (!"BID_UPDATE".equals(action)) return;
 
@@ -235,21 +283,27 @@ public class bidDetailController implements ServerResponseListener {
 
         Platform.runLater(() -> {
             if (res.isSuccess()) {
-                new Thread(() -> {
-                    Auction updated = auctionService.getAuctionById(auctionId);
-                    Platform.runLater(() -> {
-                        auction = updated;
-                        updateAuctionStatus();
-                        loadChart();
+                // Cập nhật giá ngay lập tức từ data có sẵn trong response
+                // Không cần DB call → không delay, không NPE
+                currentPrice.setText(fmt(res.getCurrentPrice()));
 
-                        // Check bidderId để hiện đúng thông báo
-                        if (res.getBidderId() != bidderId) {
-                            showMsg("⚡ Someone placed: " + fmt(res.getCurrentPrice()), true);
-                        } else {
-                            showMsg("✓ Your bid was placed!", true);
-                        }
-                    });
-                }).start();
+                // Cập nhật object auction local để handlePlaceBid check đúng giá
+                if (auction != null) {
+                    auction.setCurrentPrice(res.getCurrentPrice());
+                }
+
+                // Thông báo
+                if (res.getBidderId() != bidderId) {
+                    showMsg("⚡ Someone placed: " + fmt(res.getCurrentPrice()), true);
+                } else {
+                    showMsg("✓ Your bid was placed!", true);
+                }
+
+                // Reload chart trong background (không block UI)
+                if (bidService != null) {
+                    loadChart();
+                }
+
             } else {
                 showMsg(res.getMessage(), false);
             }
@@ -289,10 +343,48 @@ public class bidDetailController implements ServerResponseListener {
         }, 0, 1000);
     }
 
-    @FXML
-    public void handleClose() {
+    /**
+     * Dọn dẹp resource: cancel timer + remove socket listener.
+     * Gọi từ handleClose() VÀ từ stage.setOnHidden() trong bidController
+     * để đảm bảo cleanup dù popup đóng bằng cách nào.
+     */
+    public void cleanup() {
         if (countdownTimer != null) countdownTimer.cancel();
         ClientSocket.getInstance().removeListener(this);
+    }
+
+    /**
+     * Mở popup AutoBid khi người dùng nhấn nút "⚡ AutoBid".
+     */
+    @FXML
+    public void handleOpenAutoBid() {
+        try {
+            FXMLLoader loader = new FXMLLoader(
+                    getClass().getResource("/fxml/AutoBid.fxml"));
+            Parent root = loader.load();
+
+            autoBidController controller = loader.getController();
+            controller.initData(auctionId, item, auction);
+
+            Stage popup = new Stage();
+            popup.initStyle(StageStyle.UNDECORATED);
+            popup.setTitle("AutoBid");
+            popup.setScene(new Scene(root));
+            popup.initModality(Modality.NONE); // non-modal so bid detail stays usable
+            popup.setResizable(false);
+
+            popup.setOnHidden(e -> controller.cleanup());
+            popup.show();
+
+        } catch (Exception ex) {
+            showMsg("Failed to open AutoBid: " + ex.getMessage(), false);
+            ex.printStackTrace();
+        }
+    }
+
+    @FXML
+    public void handleClose() {
+        cleanup();
         Stage stage = (Stage) bidInput.getScene().getWindow();
         stage.close();
     }

@@ -29,19 +29,9 @@ import java.sql.Connection;
 import java.util.List;
 import java.util.stream.Collectors;
 
-/**
- * bidController — màn hình danh sách item/auction để đặt giá.
- *
- * Các cải tiến so với version cũ:
- *  1. FIX N+1 QUERY: dùng JOIN query 1 lần thay vì loop N query.
- *  2. FIX REAL-TIME PRICE: ItemRow dùng JavaFX Properties (SimpleStringProperty)
- *     nên TableView tự re-render ngay khi có bid mới, không cần reload trang.
- *  3. SOCKET LISTENER: implement ServerResponseListener, lắng nghe broadcast
- *     BID_UPDATE từ server và update đúng row trong bảng theo auctionId.
- */
 public class bidController implements ServerResponseListener {
 
-    // ── FXML bindings ──────────────────────────────────────────────────────────
+    // ── FXML ──────────────────────────────────────────────────────────────────
     @FXML private TextField searchField;
     @FXML private TableView<ItemRow> itemTable;
     @FXML private TableColumn<ItemRow, String> colId;
@@ -51,38 +41,29 @@ public class bidController implements ServerResponseListener {
     @FXML private TableColumn<ItemRow, String> colStatus;
     @FXML private TableColumn<ItemRow, Void>   colAction;
 
-    // ── State ──────────────────────────────────────────────────────────────────
+    // ── State ─────────────────────────────────────────────────────────────────
     private final ObservableList<ItemRow> allItems = FXCollections.observableArrayList();
-    private ItemService    itemService;
-    private AuctionService auctionService;
+    private ItemService       itemService;
+    private AuctionService    auctionService;
+    private AuctionDAOImpl    auctionDAOImpl;   // FIX: giữ ref để gọi closeExpiredAuctions
     private static final Gson gson = new Gson();
 
-    // ── Lifecycle ──────────────────────────────────────────────────────────────
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     @FXML
     public void initialize() {
         setupColumns();
         loadData();
-
-        // Đăng ký lắng nghe broadcast từ server (BID_UPDATE)
-        // ClientSocket đã có sẵn singleton, chỉ cần addListener
         ClientSocket.getInstance().addListener(this);
     }
 
-    /**
-     * Gọi khi màn hình bị đóng (hoặc Return về home).
-     * Quan trọng: phải removeListener để tránh memory leak và
-     * tránh update một controller đã chết.
-     */
     private void cleanup() {
         ClientSocket.getInstance().removeListener(this);
     }
 
-    // ── Column setup ───────────────────────────────────────────────────────────
+    // ── Column setup ──────────────────────────────────────────────────────────
 
     private void setupColumns() {
-        // FIX: dùng lambda bind vào Property thay vì PropertyValueFactory
-        // để TableView tự observe và re-render khi property thay đổi.
         colId    .setCellValueFactory(c -> c.getValue().idProperty());
         colName  .setCellValueFactory(c -> c.getValue().nameProperty());
         colType  .setCellValueFactory(c -> c.getValue().typeProperty());
@@ -90,9 +71,7 @@ public class bidController implements ServerResponseListener {
         colStatus.setCellValueFactory(c -> c.getValue().statusProperty());
 
         colAction.setCellFactory(col -> new TableCell<>() {
-
             private final Button btn = new Button("Bid");
-
             {
                 btn.setOnAction(e -> {
                     ItemRow row = getTableRow().getItem();
@@ -109,7 +88,6 @@ public class bidController implements ServerResponseListener {
                     setGraphic(null);
                 } else {
                     ItemRow row = getTableRow().getItem();
-                    // Chỉ enable nút Bid nếu item có auction đang OPEN
                     boolean canBid = row != null
                             && row.getAuctionId() != -1
                             && "OPEN".equals(row.getStatus());
@@ -120,14 +98,11 @@ public class bidController implements ServerResponseListener {
         });
     }
 
-    // ── Data loading (FIX N+1 QUERY) ──────────────────────────────────────────
+    // ── Data loading ──────────────────────────────────────────────────────────
 
     /**
-     * Load dữ liệu trong background thread.
-     *
-     * FIX N+1: Thay vì gọi getAllItems() rồi loop getAuctionByItemId() cho từng item
-     * (= 1 + N query), ta dùng AuctionDAO.findAllWithItems() — một JOIN query duy nhất.
-     * Xem AuctionDAOImpl.findAllWithItems() bên dưới để hiểu SQL.
+     * FIX BUG 1: Gọi closeExpiredAuctions() TRƯỚC khi query danh sách.
+     * DB sẽ tự update status CLOSED cho auction hết giờ → bảng hiển thị đúng.
      */
     private void loadData() {
         new Thread(() -> {
@@ -136,19 +111,21 @@ public class bidController implements ServerResponseListener {
                 if (conn == null) throw new Exception("Database connection failed");
 
                 itemService    = new ItemService(new ItemDAOImpl(conn));
-                auctionService = new AuctionService(new AuctionDAOImpl(conn));
+                auctionDAOImpl = new AuctionDAOImpl(conn);
+                auctionService = new AuctionService(auctionDAOImpl);
 
-                // 1 query JOIN thay vì N+1
-                List<ItemAuctionRow> joined = ((AuctionDAOImpl) auctionService
-                        .getAuctionDAO())
-                        .findAllWithItems();
+                // FIX BUG 1: đóng auction hết giờ trước khi load
+                int closed = auctionDAOImpl.closeExpiredAuctions();
+                if (closed > 0) {
+                    System.out.println("Auto-closed " + closed + " expired auction(s).");
+                }
+
+                List<ItemAuctionRow> joined = auctionDAOImpl.findAllWithItems();
 
                 ObservableList<ItemRow> tempList = FXCollections.observableArrayList();
                 for (ItemAuctionRow r : joined) {
                     tempList.add(new ItemRow(
-                            r.itemId,
-                            r.itemName,
-                            r.itemType,
+                            r.itemId, r.itemName, r.itemType,
                             r.currentPrice != null
                                     ? String.format("%,.0f ₫", r.currentPrice)
                                     : "-",
@@ -169,19 +146,14 @@ public class bidController implements ServerResponseListener {
         }).start();
     }
 
-    // ── Socket listener (REAL-TIME PRICE UPDATE) ───────────────────────────────
+    // ── Socket listener ───────────────────────────────────────────────────────
 
     /**
-     * Được gọi bởi ClientSocket mỗi khi server broadcast một message.
-     * Server broadcast BID_UPDATE sau mỗi lần đặt giá thành công (xem ClientHandler).
-     *
-     * FIX REAL-TIME: Tìm đúng ItemRow theo auctionId, gọi setPrice() / setStatus()
-     * → vì các field là SimpleStringProperty, TableView tự re-render ngay lập tức
-     * mà không cần reload toàn bộ bảng.
+     * FIX BUG 3: Nhận BID_UPDATE → cập nhật ngay cả giá lẫn status trong bảng.
+     * Không cần reload toàn bộ danh sách.
      */
     @Override
     public void onRespone(JsonObject response) {
-        // Chỉ xử lý BID_UPDATE
         if (!response.has("action")) return;
         String action = response.get("action").getAsString();
         if (!"BID_UPDATE".equals(action)) return;
@@ -190,19 +162,19 @@ public class bidController implements ServerResponseListener {
         if (!res.isSuccess()) return;
 
         Platform.runLater(() -> {
-            // Tìm row có đúng auctionId và update price tại chỗ
             for (ItemRow row : allItems) {
                 if (row.getAuctionId() == res.getAuctionId()) {
-                    // SimpleStringProperty.set() → TableView tự observe và re-render
                     row.setPrice(String.format("%,.0f ₫", res.getCurrentPrice()));
-                    row.setStatus("OPEN"); // vẫn OPEN nếu bid thành công
+                    row.setStatus("OPEN");
+                    // Ép TableView refresh row bằng cách refresh toàn bộ
+                    itemTable.refresh();
                     break;
                 }
             }
         });
     }
 
-    // ── Bid popup ──────────────────────────────────────────────────────────────
+    // ── Bid popup ─────────────────────────────────────────────────────────────
 
     private void openBidPopup(ItemRow row, Button btn) {
         if (itemService == null) {
@@ -229,7 +201,6 @@ public class bidController implements ServerResponseListener {
                         Parent root = loader.load();
 
                         bidDetailController controller = loader.getController();
-                        controller.initData(row.getAuctionId(), item);
 
                         Stage popup = new Stage();
                         popup.initStyle(StageStyle.UNDECORATED);
@@ -237,8 +208,17 @@ public class bidController implements ServerResponseListener {
                         popup.setScene(new Scene(root));
                         popup.initModality(Modality.APPLICATION_MODAL);
                         popup.setResizable(false);
-                        popup.setOnHidden(e -> btn.setDisable(false));
-                        popup.showAndWait();
+
+                        popup.setOnHidden(e -> {
+                            controller.cleanup();
+                            btn.setDisable(false);
+                            // FIX BUG 3: reload nhẹ sau khi đóng popup
+                            // để bảng cập nhật giá + status mới nhất
+                            refreshTableFromDB();
+                        });
+
+                        popup.show();
+                        controller.initData(row.getAuctionId(), item);
 
                     } catch (Exception ex) {
                         showError("Failed to open auction: " + ex.getMessage());
@@ -257,7 +237,35 @@ public class bidController implements ServerResponseListener {
         }).start();
     }
 
-    // ── Search ─────────────────────────────────────────────────────────────────
+    /**
+     * FIX BUG 3: Reload nhẹ — chỉ update price + status cho từng row
+     * mà không rebuild toàn bộ list (tránh nhấp nháy).
+     */
+    private void refreshTableFromDB() {
+        if (auctionDAOImpl == null) return;
+        new Thread(() -> {
+            // đóng auction hết giờ trước
+            auctionDAOImpl.closeExpiredAuctions();
+
+            List<ItemAuctionRow> joined = auctionDAOImpl.findAllWithItems();
+            Platform.runLater(() -> {
+                for (ItemAuctionRow r : joined) {
+                    for (ItemRow row : allItems) {
+                        if (row.getId() == r.itemId) {
+                            row.setPrice(r.currentPrice != null
+                                    ? String.format("%,.0f ₫", r.currentPrice)
+                                    : "-");
+                            row.setStatus(r.status != null ? r.status : "NO AUCTION");
+                            break;
+                        }
+                    }
+                }
+                itemTable.refresh();
+            });
+        }).start();
+    }
+
+    // ── Search ────────────────────────────────────────────────────────────────
 
     @FXML
     public void handleSearch(ActionEvent event) {
@@ -269,40 +277,31 @@ public class bidController implements ServerResponseListener {
         }
 
         ObservableList<ItemRow> filtered = FXCollections.observableArrayList();
-
         try {
             int id = Integer.parseInt(query);
-            filtered.addAll(
-                    allItems.stream()
-                            .filter(r -> r.getId() == id)
-                            .collect(Collectors.toList())
-            );
+            filtered.addAll(allItems.stream()
+                    .filter(r -> r.getId() == id)
+                    .collect(Collectors.toList()));
         } catch (NumberFormatException e) {
-            filtered.addAll(
-                    allItems.stream()
-                            .filter(r -> r.getName()
-                                    .toLowerCase()
-                                    .contains(query.toLowerCase()))
-                            .collect(Collectors.toList())
-            );
+            filtered.addAll(allItems.stream()
+                    .filter(r -> r.getName().toLowerCase().contains(query.toLowerCase()))
+                    .collect(Collectors.toList()));
         }
-
         itemTable.setItems(filtered);
     }
 
-    // ── Navigation ─────────────────────────────────────────────────────────────
+    // ── Navigation ────────────────────────────────────────────────────────────
 
     @FXML
     public void Return(ActionEvent event) throws Exception {
-        cleanup(); // bỏ listener trước khi rời màn hình
-
+        cleanup();
         Parent root = FXMLLoader.load(getClass().getResource("/fxml/home.fxml"));
         Stage stage = (Stage) ((Node) event.getSource()).getScene().getWindow();
         stage.setScene(new Scene(root));
         stage.show();
     }
 
-    // ── Helpers ────────────────────────────────────────────────────────────────
+    // ── Helpers ───────────────────────────────────────────────────────────────
 
     private void showError(String message) {
         Alert alert = new Alert(Alert.AlertType.ERROR);
@@ -312,27 +311,16 @@ public class bidController implements ServerResponseListener {
         alert.showAndWait();
     }
 
-    // ── Inner classes ──────────────────────────────────────────────────────────
+    // ── Inner classes ─────────────────────────────────────────────────────────
 
-    /**
-     * ItemRow — model cho từng dòng trong TableView.
-     *
-     * FIX: Các field price và status dùng SimpleStringProperty thay vì final String.
-     * TableView bind vào Property → khi gọi setPrice() / setStatus(), nó tự re-render
-     * ngay lập tức mà không cần reload toàn bộ ObservableList.
-     *
-     * id, name, type vẫn là SimpleStringProperty (immutable về mặt logic) để đồng nhất.
-     */
     public static class ItemRow {
-
         private final int id;
         private final int auctionId;
-
         private final SimpleStringProperty idProp;
         private final SimpleStringProperty name;
         private final SimpleStringProperty type;
-        private final SimpleStringProperty price;   // mutable — thay đổi khi có bid mới
-        private final SimpleStringProperty status;  // mutable — thay đổi khi đấu giá kết thúc
+        private final SimpleStringProperty price;
+        private final SimpleStringProperty status;
 
         public ItemRow(int id, String name, String type,
                        String price, String status, int auctionId) {
@@ -345,14 +333,12 @@ public class bidController implements ServerResponseListener {
             this.status    = new SimpleStringProperty(status);
         }
 
-        // Properties (TableView bind vào đây)
         public SimpleStringProperty idProperty()     { return idProp; }
         public SimpleStringProperty nameProperty()   { return name; }
         public SimpleStringProperty typeProperty()   { return type; }
         public SimpleStringProperty priceProperty()  { return price; }
         public SimpleStringProperty statusProperty() { return status; }
 
-        // Getters
         public int    getId()        { return id; }
         public int    getAuctionId() { return auctionId; }
         public String getName()      { return name.get(); }
@@ -360,15 +346,10 @@ public class bidController implements ServerResponseListener {
         public String getPrice()     { return price.get(); }
         public String getStatus()    { return status.get(); }
 
-        // Setters cho real-time update (chỉ price và status cần thay đổi)
-        public void setPrice(String newPrice)   { price.set(newPrice); }
-        public void setStatus(String newStatus) { status.set(newStatus); }
+        public void setPrice(String v)  { price.set(v); }
+        public void setStatus(String v) { status.set(v); }
     }
 
-    /**
-     * DTO nhẹ dùng nội bộ để nhận kết quả JOIN query.
-     * Không cần serialize, chỉ dùng trong loadData().
-     */
     public static class ItemAuctionRow {
         public int    itemId;
         public String itemName;

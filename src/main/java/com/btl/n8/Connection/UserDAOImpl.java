@@ -1,4 +1,5 @@
 package com.btl.n8.Connection;
+
 import com.btl.n8.Model.entity.Bidder;
 import com.btl.n8.Model.entity.Seller;
 import com.btl.n8.Model.entity.User;
@@ -6,9 +7,13 @@ import com.btl.n8.Model.enums.Role;
 import com.btl.n8.Model.mapper.UserMapper;
 
 import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
 
 public class UserDAOImpl implements UserDAO {
+
     private final Connection conn;
+
     private static final String BASE_SELECT = """
     SELECT u.user_id, u.account, u.password, u.role,
            b.balance,
@@ -18,41 +23,31 @@ public class UserDAOImpl implements UserDAO {
     LEFT JOIN sellers s ON u.user_id = s.seller_id
 """;
 
-    public UserDAOImpl(Connection conn){
+    public UserDAOImpl(Connection conn) {
         this.conn = conn;
     }
 
+    // ── insert ────────────────────────────────────────────────────────────────
+
     @Override
     public boolean insert(User user) {
-
         try {
-
             conn.setAutoCommit(false);
 
-            boolean insertedUser = insertUser(user);
-
-            if (!insertedUser) {
+            if (!insertUser(user)) {
                 conn.rollback();
                 return false;
             }
 
             if (user instanceof Bidder bidder) {
-
-                boolean insertedBidder =
-                        insertBidder(bidder);
-
-                if (!insertedBidder) {
+                if (!insertBidder(bidder)) {
                     conn.rollback();
                     return false;
                 }
             }
 
             if (user instanceof Seller seller) {
-
-                boolean insertedSeller =
-                        insertSeller(seller);
-
-                if (!insertedSeller) {
+                if (!insertSeller(seller)) {
                     conn.rollback();
                     return false;
                 }
@@ -62,67 +57,38 @@ public class UserDAOImpl implements UserDAO {
             return true;
 
         } catch (SQLException e) {
-
-            try {
-                conn.rollback();
-            } catch (SQLException ex) {
-                ex.printStackTrace();
+            try { conn.rollback(); } catch (SQLException ex) {
+                System.out.println("Lỗi rollback: " + ex.getMessage());
             }
-
-            System.out.println("Lỗi transaction: " + e.getMessage());
-        }
-        finally {
-
-            try {
-                conn.setAutoCommit(true);
-            } catch (SQLException e) {
-                e.printStackTrace();
+            System.out.println("Lỗi transaction insert: " + e.getMessage());
+        } finally {
+            try { conn.setAutoCommit(true); } catch (SQLException e) {
+                System.out.println("Lỗi setAutoCommit: " + e.getMessage());
             }
         }
-
         return false;
     }
 
+    // ── upgradeToSeller ───────────────────────────────────────────────────────
+
     @Override
     public boolean upgradeToSeller(int userId) {
-
         try {
-
             conn.setAutoCommit(false);
 
             User user = findById(userId);
-
-            if (user == null) {
+            if (user == null || user.getRole() == Role.SELLER) {
                 conn.rollback();
                 return false;
             }
 
-            // đã là seller
-            if (user.getRole() == Role.SELLER) {
+            if (!setRoleById(userId, Role.SELLER)) {
                 conn.rollback();
                 return false;
             }
 
-            // update role
-            boolean updatedRole =
-                    setRoleById(userId, Role.SELLER);
-
-            if (!updatedRole) {
-                conn.rollback();
-                return false;
-            }
-
-            // insert seller table
-            Seller seller = new Seller(
-                    user.getId(),
-                    user.getAccount(),
-                    user.getPassword()
-            );
-
-            boolean insertedSeller =
-                    insertSeller(seller);
-
-            if (!insertedSeller) {
+            Seller seller = new Seller(user.getId(), user.getAccount(), user.getPassword());
+            if (!insertSeller(seller)) {
                 conn.rollback();
                 return false;
             }
@@ -131,29 +97,19 @@ public class UserDAOImpl implements UserDAO {
             return true;
 
         } catch (SQLException e) {
-
-            try {
-                conn.rollback();
-            } catch (SQLException ex) {
-                ex.printStackTrace();
+            try { conn.rollback(); } catch (SQLException ex) {
+                System.out.println("Lỗi rollback upgrade seller: " + ex.getMessage());
             }
-
-            System.out.println("Lỗi transaction upgrade seller: "
-                    + e.getMessage());
-
+            System.out.println("Lỗi transaction upgrade seller: " + e.getMessage());
         } finally {
-
-            try {
-                conn.setAutoCommit(true);
-            } catch (SQLException e) {
-                e.printStackTrace();
+            try { conn.setAutoCommit(true); } catch (SQLException e) {
+                System.out.println("Lỗi setAutoCommit: " + e.getMessage());
             }
         }
-
         return false;
     }
 
-
+    // ── update ────────────────────────────────────────────────────────────────
 
     @Override
     public boolean update(User user) {
@@ -164,52 +120,43 @@ public class UserDAOImpl implements UserDAO {
             ps.setString(2, user.getPassword());
             ps.setInt(3, user.getId());
 
-            int rows = ps.executeUpdate();
-
-            if (rows > 0) {
-                // BIDDER
-                if (user instanceof Bidder) {
+            if (ps.executeUpdate() > 0) {
+                if (user instanceof Bidder bidder) {
                     String sql2 = "UPDATE bidders SET balance = ? WHERE user_id = ?";
                     try (PreparedStatement ps2 = conn.prepareStatement(sql2)) {
-                        ps2.setBigDecimal(1, ((Bidder) user).getBalance());
+                        ps2.setBigDecimal(1, bidder.getBalance());
                         ps2.setInt(2, user.getId());
                         ps2.executeUpdate();
                     }
                 }
-                // SELLER không có field riêng → không cần update thêm
                 return true;
             }
 
         } catch (SQLIntegrityConstraintViolationException e) {
-            System.out.println("Lỗi ràng buộc");
+            System.out.println("Lỗi ràng buộc khi update: " + e.getMessage());
         } catch (SQLException e) {
-            System.out.println("Lỗi SQL khi update");
+            System.out.println("Lỗi SQL khi update: " + e.getMessage());
         }
-
         return false;
     }
+
+    // ── setRoleById ───────────────────────────────────────────────────────────
 
     @Override
     public boolean setRoleById(int userId, Role role) {
-
         String sql = "UPDATE users SET role = ? WHERE user_id = ?";
 
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
-
             ps.setString(1, role.name());
             ps.setInt(2, userId);
-
-            int rows = ps.executeUpdate();
-
-            return rows > 0;
-
+            return ps.executeUpdate() > 0;
         } catch (SQLException e) {
-
-            System.out.println("Lỗi SQL khi update role: " + e.getMessage());
+            System.out.println("Lỗi SQL khi setRoleById: " + e.getMessage());
         }
-
         return false;
     }
+
+    // ── findByAccount ─────────────────────────────────────────────────────────
 
     @Override
     public User findByAccount(String account) {
@@ -217,18 +164,16 @@ public class UserDAOImpl implements UserDAO {
 
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, account);
-
             try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) {
-                    return UserMapper.map(rs);
-                }
+                if (rs.next()) return UserMapper.map(rs);
             }
         } catch (SQLException e) {
             System.out.println("Lỗi SQL khi findByAccount: " + e.getMessage());
         }
-
         return null;
     }
+
+    // ── findById ──────────────────────────────────────────────────────────────
 
     @Override
     public User findById(int id) {
@@ -236,92 +181,93 @@ public class UserDAOImpl implements UserDAO {
 
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, id);
-
             try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) {
-                    return UserMapper.map(rs);
-                }
+                if (rs.next()) return UserMapper.map(rs);
             }
         } catch (SQLException e) {
             System.out.println("Lỗi SQL khi findById: " + e.getMessage());
         }
-
         return null;
     }
 
+    // ── findAll ───────────────────────────────────────────────────────────────
+
+    @Override
+    public List<User> findAll() {
+        List<User> users = new ArrayList<>();
+
+        try (PreparedStatement ps = conn.prepareStatement(BASE_SELECT);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                users.add(UserMapper.map(rs));
+            }
+        } catch (SQLException e) {
+            System.out.println("Lỗi SQL khi findAll: " + e.getMessage());
+        }
+        return users;
+    }
+
+    // ── deleteById ────────────────────────────────────────────────────────────
+
+    @Override
+    public boolean deleteById(int id) {
+        String sql = "DELETE FROM users WHERE user_id = ?";
+
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, id);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            System.out.println("Lỗi SQL khi deleteById: " + e.getMessage());
+        }
+        return false;
+    }
+
+    // ── private helpers ───────────────────────────────────────────────────────
 
     private boolean insertUser(User user) {
-
         String sql = "INSERT INTO users (account, password, role) VALUES (?, ?, ?)";
 
         try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
-
             ps.setString(1, user.getAccount());
             ps.setString(2, user.getPassword());
             ps.setString(3, user.getRole().name());
 
-            int rows = ps.executeUpdate();
-
-            if (rows > 0) {
-
+            if (ps.executeUpdate() > 0) {
                 try (ResultSet rs = ps.getGeneratedKeys()) {
-
                     if (rs.next()) {
-
-                        int userId = rs.getInt(1);
-
-                        // gán id lại cho object
-                        user.setId(userId);
-
+                        user.setId(rs.getInt(1));
                         return true;
                     }
                 }
             }
-
         } catch (SQLException e) {
-            System.out.println("Lỗi SQL khi insert user: " + e.getMessage());
+            System.out.println("Lỗi SQL khi insertUser: " + e.getMessage());
         }
-
         return false;
     }
 
     private boolean insertBidder(Bidder bidder) {
-
         String sql = "INSERT INTO bidders(user_id, balance) VALUES (?, ?)";
 
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
-
             ps.setInt(1, bidder.getId());
             ps.setBigDecimal(2, bidder.getBalance());
-
-            int rows = ps.executeUpdate();
-
-            return rows > 0;
-
+            return ps.executeUpdate() > 0;
         } catch (SQLException e) {
-            System.out.println("Lỗi SQL khi insert bidder: " + e.getMessage());
+            System.out.println("Lỗi SQL khi insertBidder: " + e.getMessage());
         }
-
         return false;
     }
 
     private boolean insertSeller(Seller seller) {
-
         String sql = "INSERT INTO sellers(seller_id) VALUES (?)";
 
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
-
             ps.setInt(1, seller.getId());
-
-            int rows = ps.executeUpdate();
-
-            return rows > 0;
-
+            return ps.executeUpdate() > 0;
         } catch (SQLException e) {
-            System.out.println("Lỗi SQL khi insert seller: " + e.getMessage());
+            System.out.println("Lỗi SQL khi insertSeller: " + e.getMessage());
         }
-
         return false;
     }
-
 }

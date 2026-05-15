@@ -17,18 +17,10 @@ public class AuctionDAOImpl implements AuctionDAO {
         this.conn = conn;
     }
 
-    // ── THÊM MỚI: JOIN query 1 lần thay vì N+1 ─────────────────────────────────
-    /**
-     * FIX N+1 QUERY: Thay vì controller gọi getAllItems() rồi loop gọi
-     * getAuctionByItemId() cho từng item 😊 1 + N round-trip đến DB),
-     * ta dùng LEFT JOIN để lấy hết trong 1 query duy nhất.
-     *
-     * LEFT JOIN để item chưa có auction vẫn xuất hiện trong danh sách
-     * (auction columns sẽ là NULL, controller hiển thị "-" và "NO AUCTION").
-     */
+    // ── findAllWithItems ──────────────────────────────────────────────────────
+
     public List<ItemAuctionRow> findAllWithItems() {
         List<ItemAuctionRow> result = new ArrayList<>();
-
         String sql = """
             SELECT
                 i.item_id,
@@ -41,38 +33,50 @@ public class AuctionDAOImpl implements AuctionDAO {
             LEFT JOIN auctions a ON a.item_id = i.item_id
             ORDER BY i.item_id
         """;
-
         try (PreparedStatement ps = conn.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
-
             while (rs.next()) {
-                int itemId          = rs.getInt("item_id");
-                String itemName     = rs.getString("item_name");
-                String itemType     = rs.getString("item_type");
-
-                // auction columns có thể NULL (LEFT JOIN)
-                int auctionId       = rs.getInt("auction_id");     // 0 nếu NULL
-                boolean hasAuction  = !rs.wasNull();
-                BigDecimal price    = rs.getBigDecimal("current_price");
-                String status       = rs.getString("status");
-
+                int itemId         = rs.getInt("item_id");
+                String itemName    = rs.getString("item_name");
+                String itemType    = rs.getString("item_type");
+                int auctionId      = rs.getInt("auction_id");
+                boolean hasAuction = !rs.wasNull();
+                BigDecimal price   = rs.getBigDecimal("current_price");
+                String status      = rs.getString("status");
                 result.add(new ItemAuctionRow(
-                        itemId,
-                        itemName,
-                        itemType,
+                        itemId, itemName, itemType,
                         hasAuction ? price  : null,
                         hasAuction ? status : null,
                         hasAuction ? auctionId : -1
                 ));
             }
-
         } catch (SQLException e) {
             System.out.println("Lỗi SQL khi findAllWithItems: " + e.getMessage());
         }
-
         return result;
     }
-    // ────────────────────────────────────────────────────────────────────────────
+
+    // ── FIX BUG 1: đóng auction hết giờ nhưng DB vẫn OPEN ───────────────────
+    /**
+     * Gọi 1 lần mỗi khi loadData() chạy trong bidController.
+     * UPDATE trực tiếp trong DB → findAllWithItems() sau đó sẽ trả đúng status.
+     */
+    public int closeExpiredAuctions() {
+        String sql = """
+            UPDATE auctions
+            SET status = 'CLOSED'
+            WHERE status = 'OPEN'
+              AND end_time < NOW()
+        """;
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            return ps.executeUpdate();
+        } catch (SQLException e) {
+            System.out.println("Lỗi SQL khi closeExpiredAuctions: " + e.getMessage());
+        }
+        return 0;
+    }
+
+    // ── insert ────────────────────────────────────────────────────────────────
 
     @Override
     public boolean insert(Auction auction) {
@@ -80,7 +84,6 @@ public class AuctionDAOImpl implements AuctionDAO {
         INSERT INTO auctions(item_id, starting_price, current_price, start_time, end_time, status)
         VALUES (?, ?, ?, ?, ?, ?)
     """;
-
         try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setInt(1, auction.getItemId());
             ps.setBigDecimal(2, auction.getStartingPrice());
@@ -88,14 +91,10 @@ public class AuctionDAOImpl implements AuctionDAO {
             ps.setTimestamp(4, Timestamp.valueOf(auction.getStartTime()));
             ps.setTimestamp(5, Timestamp.valueOf(auction.getEndTime()));
             ps.setString(6, auction.getStatus().name());
-
             int rows = ps.executeUpdate();
-
             if (rows > 0) {
                 try (ResultSet rs = ps.getGeneratedKeys()) {
-                    if (rs.next()) {
-                        auction.setId(rs.getInt(1));
-                    }
+                    if (rs.next()) auction.setId(rs.getInt(1));
                 }
                 return true;
             }
@@ -104,56 +103,44 @@ public class AuctionDAOImpl implements AuctionDAO {
         } catch (SQLException e) {
             System.out.println("Lỗi SQL khi insert auction: " + e.getMessage());
         }
-
         return false;
     }
 
     @Override
     public Auction findById(int id) {
         String sql = "SELECT * FROM auctions WHERE auction_id = ?";
-
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, id);
-
             try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) {
-                    return mapAuction(rs);
-                }
+                if (rs.next()) return mapAuction(rs);
             }
         } catch (SQLException e) {
             System.out.println("Lỗi SQL khi findById auction: " + e.getMessage());
         }
-
         return null;
     }
 
     @Override
     public Auction findByItemId(int itemId) {
         String sql = "SELECT * FROM auctions WHERE item_id = ?";
-
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, itemId);
-
             try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) {
-                    return mapAuction(rs);
-                }
+                if (rs.next()) return mapAuction(rs);
             }
         } catch (SQLException e) {
             System.out.println("Lỗi SQL khi findByItemId: " + e.getMessage());
         }
-
         return null;
     }
 
     @Override
     public boolean update(Auction auction) {
         String sql = """
-        UPDATE auctions 
+        UPDATE auctions
         SET starting_price = ?, current_price = ?, start_time = ?, end_time = ?, status = ?
         WHERE auction_id = ?
     """;
-
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setBigDecimal(1, auction.getStartingPrice());
             ps.setBigDecimal(2, auction.getCurrentPrice());
@@ -161,43 +148,35 @@ public class AuctionDAOImpl implements AuctionDAO {
             ps.setTimestamp(4, Timestamp.valueOf(auction.getEndTime()));
             ps.setString(5, auction.getStatus().name());
             ps.setInt(6, auction.getId());
-
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
             System.out.println("Lỗi SQL khi update auction: " + e.getMessage());
         }
-
         return false;
     }
 
     @Override
     public boolean updateCurrentPrice(int auctionId, BigDecimal price) {
         String sql = "UPDATE auctions SET current_price = ? WHERE auction_id = ?";
-
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setBigDecimal(1, price);
             ps.setInt(2, auctionId);
-
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
-            System.out.println("Lỗi SQL khi update current price: " + e.getMessage());
+            System.out.println("Lỗi SQL khi updateCurrentPrice: " + e.getMessage());
         }
-
         return false;
     }
 
     @Override
     public boolean deleteById(int id) {
         String sql = "DELETE FROM auctions WHERE auction_id = ?";
-
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, id);
-
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
             System.out.println("Lỗi SQL khi delete auction: " + e.getMessage());
         }
-
         return false;
     }
 
@@ -205,33 +184,23 @@ public class AuctionDAOImpl implements AuctionDAO {
     public List<Auction> findAll() {
         List<Auction> auctions = new ArrayList<>();
         String sql = "SELECT * FROM auctions ORDER BY auction_id";
-
         try (PreparedStatement ps = conn.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
-
-            while (rs.next()) {
-                auctions.add(mapAuction(rs));
-            }
-
+            while (rs.next()) auctions.add(mapAuction(rs));
         } catch (SQLException e) {
             System.out.println("Lỗi SQL khi findAll auctions: " + e.getMessage());
         }
-
         return auctions;
     }
 
     private Auction mapAuction(ResultSet rs) throws SQLException {
-        int id = rs.getInt("auction_id");
-        int itemId = rs.getInt("item_id");
-
-        BigDecimal startingPrice = rs.getBigDecimal("starting_price");
-        BigDecimal currentPrice  = rs.getBigDecimal("current_price");
-
-        LocalDateTime startTime = rs.getTimestamp("start_time").toLocalDateTime();
-        LocalDateTime endTime   = rs.getTimestamp("end_time").toLocalDateTime();
-
+        int id               = rs.getInt("auction_id");
+        int itemId           = rs.getInt("item_id");
+        BigDecimal starting  = rs.getBigDecimal("starting_price");
+        BigDecimal current   = rs.getBigDecimal("current_price");
+        LocalDateTime start  = rs.getTimestamp("start_time").toLocalDateTime();
+        LocalDateTime end    = rs.getTimestamp("end_time").toLocalDateTime();
         AuctionStatus status = AuctionStatus.valueOf(rs.getString("status"));
-
-        return new Auction(id, itemId, startingPrice, currentPrice, startTime, endTime, status);
+        return new Auction(id, itemId, starting, current, start, end, status);
     }
 }
