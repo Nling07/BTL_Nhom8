@@ -11,7 +11,6 @@ module com.btl.n8 {
 
     // Thêm để Gson có thể access fields
     opens com.btl.n8.dto to com.google.gson;
-    opens com.btl.n8.Model to com.google.gson;
     opens com.btl.n8.network to com.google.gson;
     opens com.btl.n8.Service to com.google.gson;
 
@@ -20,7 +19,6 @@ module com.btl.n8 {
     exports com.btl.n8.dto;
     exports com.btl.n8.network;
     exports com.btl.n8.util;
-    exports com.btl.n8.Model;
     exports com.btl.n8.Service;
     exports com.btl.n8.Connection;
     exports com.btl.n8.Model.entity;

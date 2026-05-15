@@ -1,7 +1,10 @@
 package com.btl.n8.Service;
 
 import com.btl.n8.Connection.ItemDAO;
-import com.btl.n8.Model.*;
+import com.btl.n8.Model.entity.Card;
+import com.btl.n8.Model.entity.Figure;
+import com.btl.n8.Model.entity.Item;
+import com.btl.n8.Model.entity.Poster;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

@@ -1,12 +1,10 @@
 package com.btl.n8.Connection;
-import com.btl.n8.Model.entity.Admin;
 import com.btl.n8.Model.entity.Bidder;
 import com.btl.n8.Model.entity.Seller;
 import com.btl.n8.Model.entity.User;
 import com.btl.n8.Model.enums.Role;
 import com.btl.n8.Model.mapper.UserMapper;
 
-import java.math.BigDecimal;
 import java.sql.*;
 
 public class UserDAOImpl implements UserDAO {
