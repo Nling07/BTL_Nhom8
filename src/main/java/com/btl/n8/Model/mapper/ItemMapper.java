@@ -1,10 +1,8 @@
 package com.btl.n8.Model.mapper;
 
-import com.btl.n8.Model.entity.Card;
-import com.btl.n8.Model.entity.Figure;
 import com.btl.n8.Model.entity.Item;
-import com.btl.n8.Model.entity.Poster;
 import com.btl.n8.Model.enums.ItemType;
+import com.btl.n8.Model.factory.ItemFactory;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -19,17 +17,12 @@ public class ItemMapper {
 
         byte[] image = rs.getBytes("image"); // đọc ảnh từ DB
 
-        switch (type) {
-            case POSTER:
-                return new Poster(id, name, sellerId, image);
-            case FIGURE:
-                return new Figure(id, name, sellerId, image);
-            case CARD:
-                return new Card(id, name, sellerId, image);
-            default:
-                throw new IllegalArgumentException(
-                        "Invalid item type: " + type
-                );
-        }
+        return ItemFactory.createItem(
+                type,
+                id,
+                name,
+                sellerId,
+                image
+        );
     }
 }

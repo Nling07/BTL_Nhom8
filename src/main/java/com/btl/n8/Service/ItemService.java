@@ -1,11 +1,9 @@
 package com.btl.n8.Service;
 
 import com.btl.n8.Connection.ItemDAO;
-import com.btl.n8.Model.entity.Card;
-import com.btl.n8.Model.entity.Figure;
 import com.btl.n8.Model.entity.Item;
-import com.btl.n8.Model.entity.Poster;
 import com.btl.n8.Model.enums.ItemType;
+import com.btl.n8.Model.factory.ItemFactory;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -57,11 +55,7 @@ public class ItemService {
     // Tạo item đúng loại — tách logic khỏi controller
     public Item createItem(String name, String type, int sellerId, byte[] imageBytes) {
         ItemType itemType = ItemType.valueOf(type);
-        return switch (itemType) {
-            case POSTER -> new Poster(name, sellerId, imageBytes);
-            case FIGURE -> new Figure(name, sellerId, imageBytes);
-            case CARD -> new Card(name, sellerId, imageBytes);
-        };
+        return ItemFactory.createItem(itemType, name, sellerId, imageBytes);
     }
 
     // Xóa item theo id

@@ -13,7 +13,7 @@ import java.sql.SQLException;
 public class UserMapper {
     public static User map(ResultSet rs) throws SQLException {
 
-        int id = rs.getInt("id");
+        int id = rs.getInt("user_id");
         String account = rs.getString("account");
         String password = rs.getString("password");
 
