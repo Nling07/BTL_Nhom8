@@ -50,4 +50,41 @@ public class ItemFactory {
                 );
         }
     }
+
+    public static Item createItem(
+            ItemType type,
+            String name,
+            int sellerId,
+            byte[] image
+    ) {
+
+        switch (type) {
+
+            case FIGURE:
+                return new Figure(
+                        name,
+                        sellerId,
+                        image
+                );
+
+            case POSTER:
+                return new Poster(
+                        name,
+                        sellerId,
+                        image
+                );
+
+            case CARD:
+                return new Card(
+                        name,
+                        sellerId,
+                        image
+                );
+
+            default:
+                throw new IllegalArgumentException(
+                        "Invalid item type: " + type
+                );
+        }
+    }
 }
