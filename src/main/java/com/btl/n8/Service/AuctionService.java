@@ -1,8 +1,8 @@
 package com.btl.n8.Service;
 
 import com.btl.n8.Connection.AuctionDAO;
-import com.btl.n8.Model.Auction;
-import com.btl.n8.Model.AuctionStatus;
+import com.btl.n8.Model.entity.Auction;
+import com.btl.n8.Model.enums.AuctionStatus;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -13,6 +13,14 @@ public class AuctionService {
 
     public AuctionService(AuctionDAO auctionDAO) {
         this.auctionDAO = auctionDAO;
+    }
+
+    /**
+     * Expose DAO để bidController có thể cast sang AuctionDAOImpl
+     * và gọi findAllWithItems() (JOIN query).
+     */
+    public AuctionDAO getAuctionDAO() {
+        return auctionDAO;
     }
 
     public boolean createAuction(Auction auction) {
@@ -63,5 +71,4 @@ public class AuctionService {
     public List<Auction> getAllAuctions() {
         return auctionDAO.findAll();
     }
-
 }
