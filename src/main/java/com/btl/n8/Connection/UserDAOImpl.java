@@ -213,7 +213,7 @@ public class UserDAOImpl implements UserDAO {
 
     @Override
     public User findByAccount(String account) {
-        String sql = BASE_SELECT + " WHERE u.account = ? ";
+        String sql = BASE_SELECT + " WHERE u.account = ?";
 
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, account);

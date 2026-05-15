@@ -1,7 +1,6 @@
 package com.btl.n8;
 
 import com.btl.n8.Connection.*;
-import com.btl.n8.Model.*;
 import com.btl.n8.network.ClientHandler;
 import com.btl.n8.network.ClientSocket;
 import com.btl.n8.Service.*;
@@ -11,9 +10,6 @@ import javafx.fxml.FXMLLoader;
 import javafx.scene.Scene;
 import javafx.stage.Stage;
 
-import java.math.BigDecimal;
-import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.List;
 
