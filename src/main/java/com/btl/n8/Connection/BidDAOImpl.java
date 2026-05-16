@@ -1,7 +1,7 @@
 package com.btl.n8.Connection;
 
-import com.btl.n8.Model.entity.Bid;
-import com.btl.n8.Model.enums.BidStatus;
+import com.btl.n8.Model.Entity.Bid;
+import com.btl.n8.Model.Enums.BidStatus;
 
 import java.math.BigDecimal;
 import java.sql.*;

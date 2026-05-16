@@ -3,9 +3,9 @@ package com.btl.n8.Service;
 import com.btl.n8.Connection.UserDAO;
 import com.btl.n8.Connection.AuctionDAO;
 import com.btl.n8.Connection.ItemDAO;
-import com.btl.n8.Model.entity.User;
-import com.btl.n8.Model.entity.Auction;
-import com.btl.n8.Model.entity.Item;
+import com.btl.n8.Model.Entity.User;
+import com.btl.n8.Model.Entity.Auction;
+import com.btl.n8.Model.Entity.Item;
 
 import java.util.List;
 

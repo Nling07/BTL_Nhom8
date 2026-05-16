@@ -1,9 +1,9 @@
 package com.btl.n8.Service;
 
 import com.btl.n8.Connection.UserDAO;
-import com.btl.n8.Model.entity.Bidder;
-import com.btl.n8.Model.entity.Seller;
-import com.btl.n8.Model.entity.User;
+import com.btl.n8.Model.Entity.Bidder;
+import com.btl.n8.Model.Entity.Seller;
+import com.btl.n8.Model.Entity.User;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

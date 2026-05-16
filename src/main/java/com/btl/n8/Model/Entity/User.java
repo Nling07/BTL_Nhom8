@@ -1,0 +1,65 @@
+package com.btl.n8.Model.Entity;
+
+import com.btl.n8.Model.Enums.Role;
+
+import java.math.BigDecimal;
+
+public abstract class User extends Entity {
+    protected String account;
+    protected String password;
+    protected Role role;
+    protected BigDecimal balance;
+
+    public User(){
+        super();
+    }
+
+    public User(int id, String account, String password, Role role){
+        super(id);
+        this.account = account;
+        this.password = password;
+        this.role = role;
+    }
+
+    public User(int id, String account, String password, Role role, BigDecimal balance){
+        super(id);
+        this.account = account;
+        this.password = password;
+        this.role = role;
+        this.balance = balance;
+    }
+
+    public User(String account, String password, Role role){
+        this.account = account;
+        this.password = password;
+        this.role = role;
+    }
+
+    // Setter
+    public void setAccount(String account){
+        this.account = account;
+    }
+    public void setPassword(String password){
+        this.password = password;
+    }
+    public void setRole(Role role){
+        this.role = role;
+    }
+    public void setBalance(BigDecimal balance){
+        this.balance = balance;
+    }
+
+
+    // Getter
+    public String getAccount(){
+        return account;
+    }
+    public String getPassword(){
+        return password;
+    }
+    public Role getRole(){
+        return role;
+    }
+    public BigDecimal getBalance(){return balance;}
+
+}

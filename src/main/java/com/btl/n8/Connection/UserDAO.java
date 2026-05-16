@@ -1,7 +1,7 @@
 package com.btl.n8.Connection;
 
-import com.btl.n8.Model.enums.Role;
-import com.btl.n8.Model.entity.User;
+import com.btl.n8.Model.Enums.Role;
+import com.btl.n8.Model.Entity.User;
 
 import java.util.List;
 

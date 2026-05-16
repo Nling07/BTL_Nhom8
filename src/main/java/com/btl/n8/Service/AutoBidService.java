@@ -2,10 +2,10 @@ package com.btl.n8.Service;
 
 import com.btl.n8.Connection.AuctionDAO;
 import com.btl.n8.Connection.BidDAO;
-import com.btl.n8.Model.entity.Auction;
-import com.btl.n8.Model.enums.AuctionStatus;
-import com.btl.n8.Model.entity.Bid;
-import com.btl.n8.Model.enums.BidStatus;
+import com.btl.n8.Model.Entity.Auction;
+import com.btl.n8.Model.Enums.AuctionStatus;
+import com.btl.n8.Model.Entity.Bid;
+import com.btl.n8.Model.Enums.BidStatus;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;

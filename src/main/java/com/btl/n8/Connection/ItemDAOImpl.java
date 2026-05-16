@@ -1,7 +1,7 @@
 package com.btl.n8.Connection;
 
-import com.btl.n8.Model.entity.Item;
-import com.btl.n8.Model.mapper.ItemMapper;
+import com.btl.n8.Model.Entity.Item;
+import com.btl.n8.Model.Mapper.ItemMapper;
 
 import java.sql.*;
 import java.util.ArrayList;

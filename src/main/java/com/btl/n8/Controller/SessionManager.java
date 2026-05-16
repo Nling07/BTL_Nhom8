@@ -1,6 +1,6 @@
 package com.btl.n8.Controller;
 
-import com.btl.n8.Model.entity.User;
+import com.btl.n8.Model.Entity.User;
 
 public class SessionManager {
 

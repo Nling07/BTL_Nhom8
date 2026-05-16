@@ -1,10 +1,10 @@
 package com.btl.n8.Connection;
 
-import com.btl.n8.Model.entity.Bidder;
-import com.btl.n8.Model.entity.Seller;
-import com.btl.n8.Model.entity.User;
-import com.btl.n8.Model.enums.Role;
-import com.btl.n8.Model.mapper.UserMapper;
+import com.btl.n8.Model.Entity.Bidder;
+import com.btl.n8.Model.Entity.Seller;
+import com.btl.n8.Model.Entity.User;
+import com.btl.n8.Model.Enums.Role;
+import com.btl.n8.Model.Mapper.UserMapper;
 
 import java.sql.*;
 import java.util.ArrayList;

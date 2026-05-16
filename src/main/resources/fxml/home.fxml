@@ -7,7 +7,7 @@
 <?import javafx.scene.layout.AnchorPane?>
 <?import javafx.scene.text.Font?>
 
-<AnchorPane maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="526.0" prefWidth="965.0" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.btl.n8.Controller.homeController">
+<AnchorPane maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="526.0" prefWidth="965.0" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.btl.n8.Controller.HomeController">
    <children>
       <Button layoutX="5.0" layoutY="66.0" mnemonicParsing="false" prefHeight="26.0" prefWidth="99.0" text="deposit" />
       <Button layoutX="754.0" layoutY="29.0" mnemonicParsing="false" onAction="#account" prefHeight="74.0" prefWidth="178.0" text="Account info" />

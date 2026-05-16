@@ -1,9 +1,9 @@
 package com.btl.n8.Service;
 
 import com.btl.n8.Connection.UserDAO;
-import com.btl.n8.Model.entity.Bidder;
-import com.btl.n8.Model.entity.User;
-import com.btl.n8.Model.enums.Role;
+import com.btl.n8.Model.Entity.Bidder;
+import com.btl.n8.Model.Entity.User;
+import com.btl.n8.Model.Enums.Role;
 
 import java.math.BigDecimal;
 

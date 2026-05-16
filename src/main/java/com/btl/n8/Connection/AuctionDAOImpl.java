@@ -1,8 +1,8 @@
 package com.btl.n8.Connection;
 
-import com.btl.n8.Controller.bidController.ItemAuctionRow;
-import com.btl.n8.Model.entity.Auction;
-import com.btl.n8.Model.enums.AuctionStatus;
+import com.btl.n8.Controller.BidController.ItemAuctionRow;
+import com.btl.n8.Model.Entity.Auction;
+import com.btl.n8.Model.Enums.AuctionStatus;
 
 import java.math.BigDecimal;
 import java.sql.*;

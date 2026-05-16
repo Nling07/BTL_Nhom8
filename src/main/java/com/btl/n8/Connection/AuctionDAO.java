@@ -1,6 +1,6 @@
 package com.btl.n8.Connection;
 
-import com.btl.n8.Model.entity.Auction;
+import com.btl.n8.Model.Entity.Auction;
 
 import java.math.BigDecimal;
 import java.util.List;
