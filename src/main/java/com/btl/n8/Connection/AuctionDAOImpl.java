@@ -56,11 +56,8 @@ public class AuctionDAOImpl implements AuctionDAO {
         return result;
     }
 
-    // ── FIX BUG 1: đóng auction hết giờ nhưng DB vẫn OPEN ───────────────────
-    /**
-     * Gọi 1 lần mỗi khi loadData() chạy trong bidController.
-     * UPDATE trực tiếp trong DB → findAllWithItems() sau đó sẽ trả đúng status.
-     */
+    // ── closeExpiredAuctions ──────────────────────────────────────────────────
+
     public int closeExpiredAuctions() {
         String sql = """
             UPDATE auctions
@@ -164,6 +161,28 @@ public class AuctionDAOImpl implements AuctionDAO {
             return ps.executeUpdate() > 0;
         } catch (SQLException e) {
             System.out.println("Lỗi SQL khi updateCurrentPrice: " + e.getMessage());
+        }
+        return false;
+    }
+
+    /**
+     * Anti-sniping: gia hạn end_time.
+     * Chỉ update nếu auction vẫn đang OPEN để tránh gia hạn nhầm auction đã đóng.
+     */
+    @Override
+    public boolean extendEndTime(int auctionId, LocalDateTime newEndTime) {
+        String sql = """
+            UPDATE auctions
+            SET end_time = ?
+            WHERE auction_id = ?
+              AND status = 'OPEN'
+        """;
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setTimestamp(1, Timestamp.valueOf(newEndTime));
+            ps.setInt(2, auctionId);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            System.out.println("Lỗi SQL khi extendEndTime: " + e.getMessage());
         }
         return false;
     }

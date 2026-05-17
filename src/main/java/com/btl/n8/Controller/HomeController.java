@@ -48,11 +48,13 @@ public class HomeController {
     }
 
     public void logout(ActionEvent event) throws Exception {
+        // Huỷ tất cả AutoBid đang chạy trước khi logout
+        AutoBidManager.getInstance().cancelAll();
+
         SessionManager.getInstance().logout();
         Parent root = FXMLLoader.load(getClass().getResource("/fxml/login.fxml"));
         Stage stage = (Stage)((Node)event.getSource()).getScene().getWindow();
         stage.setScene(new Scene(root));
         stage.show();
     }
-
 }

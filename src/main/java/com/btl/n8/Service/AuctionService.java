@@ -16,7 +16,7 @@ public class AuctionService {
     }
 
     /**
-     * Expose DAO để bidController có thể cast sang AuctionDAOImpl
+     * Expose DAO để BidController có thể cast sang AuctionDAOImpl
      * và gọi findAllWithItems() (JOIN query).
      */
     public AuctionDAO getAuctionDAO() {
@@ -24,9 +24,7 @@ public class AuctionService {
     }
 
     public boolean createAuction(Auction auction) {
-        if (auction.getStartTime().isAfter(auction.getEndTime())) {
-            return false;
-        }
+        if (auction.getStartTime().isAfter(auction.getEndTime())) return false;
         auction.setStatus(AuctionStatus.OPEN);
         return auctionDAO.insert(auction);
     }
@@ -37,12 +35,9 @@ public class AuctionService {
         if (auction.getStatus() != AuctionStatus.OPEN) return false;
 
         LocalDateTime now = LocalDateTime.now();
-        if (now.isBefore(auction.getStartTime()) || now.isAfter(auction.getEndTime())) {
-            return false;
-        }
-        if (newPrice.compareTo(auction.getCurrentPrice()) <= 0) {
-            return false;
-        }
+        if (now.isBefore(auction.getStartTime()) || now.isAfter(auction.getEndTime())) return false;
+        if (newPrice.compareTo(auction.getCurrentPrice()) <= 0) return false;
+
         return auctionDAO.updateCurrentPrice(auctionId, newPrice);
     }
 
@@ -58,6 +53,20 @@ public class AuctionService {
         if (auction == null) return false;
         auction.setStatus(AuctionStatus.CANCELLED);
         return auctionDAO.update(auction);
+    }
+
+    /**
+     * Anti-sniping: gia hạn thời gian auction thêm extraSeconds giây.
+     * Chỉ có hiệu lực nếu auction vẫn OPEN.
+     * @return endTime mới nếu gia hạn thành công, null nếu thất bại.
+     */
+    public LocalDateTime extendEndTime(int auctionId, int extraSeconds) {
+        Auction auction = auctionDAO.findById(auctionId);
+        if (auction == null || auction.getStatus() != AuctionStatus.OPEN) return null;
+
+        LocalDateTime newEndTime = auction.getEndTime().plusSeconds(extraSeconds);
+        boolean ok = auctionDAO.extendEndTime(auctionId, newEndTime);
+        return ok ? newEndTime : null;
     }
 
     public Auction getAuctionById(int id) {
