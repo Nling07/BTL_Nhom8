@@ -25,7 +25,6 @@ public class AutoBidService {
 
         LocalDateTime now = LocalDateTime.now();
         if (now.isBefore(auction.getStartTime()) || now.isAfter(auction.getEndTime())) return false;
-
         // Lấy bid cao nhất hiện tại
         Bid highestBid = bidDAO.findHighestBid(auctionId);
         BigDecimal currentPrice = (highestBid != null) ? highestBid.getAmount() : auction.getCurrentPrice();

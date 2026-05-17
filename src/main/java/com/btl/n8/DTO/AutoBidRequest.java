@@ -24,7 +24,6 @@ public class AutoBidRequest extends Request {
         this.snipeMode    = snipeMode;
         this.snipeSeconds = snipeSeconds;
     }
-
     public int        getAuctionId()    { return auctionId; }
     public int        getBidderId()     { return bidderId; }
     public BigDecimal getMaxPrice()     { return maxPrice; }

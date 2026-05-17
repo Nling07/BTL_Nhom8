@@ -187,7 +187,6 @@ public class AutoBidController {
             stepField.setDisable(false);
         }
     }
-
     private void showMsg(String msg, boolean success) {
         Platform.runLater(() -> {
             msgLabel.setStyle(success ? "-fx-text-fill: #00ff88;" : "-fx-text-fill: #ff6b6b;");

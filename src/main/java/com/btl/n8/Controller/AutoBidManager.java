@@ -182,9 +182,7 @@ public class AutoBidManager implements ServerResponseListener {
             notifyUI(session.auctionId, "BID_PLACED:" + nextBid.toPlainString());
         }).start();
     }
-
     // ── Internal ──────────────────────────────────────────────────────────────
-
     private void cancelSilent(int auctionId) {
         AutoBidSession s = sessions.remove(auctionId);
         if (s != null) s.active.set(false);

@@ -26,7 +26,6 @@ public class AutoBidResponse extends Response {
         this.snipeSeconds = snipeSeconds;
         this.active       = active;
     }
-
     public boolean    isSuccess()       { return success; }
     public int        getAuctionId()    { return auctionId; }
     public BigDecimal getMaxPrice()     { return maxPrice; }
