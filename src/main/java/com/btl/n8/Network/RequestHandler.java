@@ -1,5 +1,8 @@
 package com.btl.n8.Network;
 
+import com.btl.n8.Exception.AuctionClosedException;
+import com.btl.n8.Exception.AuthenticationException;
+import com.btl.n8.Exception.InvalidBidException;
 import com.btl.n8.Connection.*;
 import com.btl.n8.Model.Entity.Auction;
 import com.btl.n8.Model.Entity.Bidder;
@@ -23,6 +26,14 @@ public class RequestHandler {
     private static final Gson gson = new GsonBuilder()
             .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
             .create();
+
+    /**
+     * Anti-sniping: nếu bid đến trong vòng SNIPE_WINDOW_SECONDS giây trước khi kết thúc,
+     * gia hạn thêm SNIPE_EXTENSION_SECONDS giây.
+     * Ví dụ: bid trong 30s cuối → gia hạn thêm 30s.
+     */
+    private static final int SNIPE_WINDOW_SECONDS    = 30;
+    private static final int SNIPE_EXTENSION_SECONDS = 30;
 
     private AuctionService auctionService;
     private UserService    userService;
@@ -75,121 +86,166 @@ public class RequestHandler {
 
     // ── BID ───────────────────────────────────────────────────────────────────
 
-    /**
-     * FIX BUG 2: Mọi nhánh thất bại đều gửi BidResponse về client.
-     * Trước đây một số nhánh (endTime qua, placeBid trả false) trả về im lặng
-     * → client mãi hiện "Bid sent..." không load được giá mới.
-     */
     public void handleBid(BidRequest req) {
         String sessionId = req.getSessionId();
-        User user = ServerSessionManager.getInstance().getUser(sessionId);
 
-        if (user == null) {
-            send(new BidResponse("Chưa đăng nhập", sessionId,
-                    false, req.getAuctionId(), BigDecimal.ZERO, null, -1));
-            return;
-        }
+        try {
+            User user = ServerSessionManager.getInstance().getUser(sessionId);
 
-        int        auctionId = req.getAuctionId();
-        BigDecimal amount    = req.getAmount();
-
-        Auction auction = auctionService.getAuctionById(auctionId);
-
-        if (auction == null) {
-            send(new BidResponse("Auction không tồn tại", sessionId,
-                    false, auctionId, BigDecimal.ZERO, null, -1));
-            return;
-        }
-
-        // FIX BUG 2a: check endTime trước — nếu hết giờ trả lỗi rõ ràng
-        LocalDateTime now = LocalDateTime.now();
-        if (now.isAfter(auction.getEndTime())) {
-            // cũng tự đóng auction trong DB luôn
-            if (auction.getStatus() == AuctionStatus.OPEN) {
-                auctionService.closeAuction(auctionId);
+            if (user == null) {
+                throw new AuthenticationException("Chưa đăng nhập");
             }
-            send(new BidResponse("Phiên đấu giá đã kết thúc", sessionId,
-                    false, auctionId, auction.getCurrentPrice(), null, -1));
-            return;
-        }
 
-        if (auction.getStatus() != AuctionStatus.OPEN) {
-            send(new BidResponse("Phiên đấu giá đã đóng", sessionId,
-                    false, auctionId, auction.getCurrentPrice(), null, -1));
-            return;
-        }
+            int        auctionId = req.getAuctionId();
+            BigDecimal amount    = req.getAmount();
 
-        if (amount.compareTo(auction.getCurrentPrice()) <= 0) {
-            send(new BidResponse("Giá phải cao hơn " + auction.getCurrentPrice(), sessionId,
-                    false, auctionId, auction.getCurrentPrice(), null, -1));
-            return;
-        }
+            Auction auction = auctionService.getAuctionById(auctionId);
 
-        // Update giá auction
-        boolean auctionUpdated = auctionService.placeBid(auctionId, amount);
-        if (!auctionUpdated) {
-            // FIX BUG 2b: placeBid trả false (có thể do race condition endTime)
-            // → phải gửi response về không thì client đơ
-            Auction latest = auctionService.getAuctionById(auctionId);
-            send(new BidResponse("Đặt giá thất bại — phiên có thể đã kết thúc", sessionId,
-                    false, auctionId,
-                    latest != null ? latest.getCurrentPrice() : auction.getCurrentPrice(),
+            if (auction == null) {
+                throw new InvalidBidException("Auction không tồn tại");
+            }
+
+            LocalDateTime now = LocalDateTime.now();
+
+            // Check hết giờ
+            if (now.isAfter(auction.getEndTime())) {
+                if (auction.getStatus() == AuctionStatus.OPEN) {
+                    auctionService.closeAuction(auctionId);
+                }
+                throw new AuctionClosedException("Phiên đấu giá đã kết thúc", auctionId);
+            }
+
+            if (auction.getStatus() != AuctionStatus.OPEN) {
+                throw new AuctionClosedException("Phiên đấu giá đã đóng", auctionId);
+            }
+
+            if (amount.compareTo(auction.getCurrentPrice()) <= 0) {
+                throw new InvalidBidException(
+                        "Giá phải cao hơn " + auction.getCurrentPrice(),
+                        auction.getCurrentPrice().doubleValue(),
+                        amount.doubleValue()
+                );
+            }
+
+            // Update giá
+            boolean auctionUpdated = auctionService.placeBid(auctionId, amount);
+            if (!auctionUpdated) {
+                Auction latest = auctionService.getAuctionById(auctionId);
+                throw new AuctionClosedException(
+                        "Đặt giá thất bại — phiên có thể đã kết thúc", auctionId);
+            }
+
+            // Lưu lịch sử bid
+            boolean bidSaved = bidService.placeBid(auctionId, user.getId(), amount);
+            if (!bidSaved) {
+                throw new InvalidBidException("Lưu lịch sử bid thất bại");
+            }
+
+            // ── ANTI-SNIPING ─────────────────────────────────────────────────────
+            // Nếu bid đến trong vòng SNIPE_WINDOW_SECONDS giây trước endTime
+            // → gia hạn thêm SNIPE_EXTENSION_SECONDS giây
+            LocalDateTime newEndTime = null;
+            long secondsLeft = java.time.Duration.between(now, auction.getEndTime()).getSeconds();
+            if (secondsLeft <= SNIPE_WINDOW_SECONDS) {
+                newEndTime = auctionService.extendEndTime(auctionId, SNIPE_EXTENSION_SECONDS);
+                if (newEndTime != null) {
+                    System.out.println("Anti-snipe: auction=" + auctionId
+                            + " gia hạn đến " + newEndTime);
+                }
+            }
+
+            // Broadcast kết quả cho tất cả client
+            Auction updated = auctionService.getAuctionById(auctionId);
+            BidResponse response = new BidResponse(
+                    "Đặt giá thành công", sessionId, true,
+                    auctionId, updated.getCurrentPrice(),
+                    now, user.getId());
+
+            // Đính kèm newEndTime nếu có gia hạn — client sẽ cập nhật countdown
+            if (newEndTime != null) {
+                response.setNewEndTime(newEndTime);
+            }
+
+            broadcastAll(gson.toJson(response));
+            System.out.println("Bid mới: auction=" + auctionId + " amount=" + amount
+                    + (newEndTime != null ? " [ANTI-SNIPE gia hạn]" : ""));
+
+        } catch (AuthenticationException e) {
+            System.err.println("[AuthenticationException] " + e.getMessage());
+            send(new BidResponse(e.getMessage(), sessionId,
+                    false, req.getAuctionId(), BigDecimal.ZERO, null, -1));
+
+        } catch (AuctionClosedException e) {
+            System.err.println("[AuctionClosedException] auctionId=" + e.getAuctionId()
+                    + " - " + e.getMessage());
+            Auction cur = auctionService.getAuctionById(e.getAuctionId());
+            send(new BidResponse(e.getMessage(), sessionId,
+                    false, e.getAuctionId(),
+                    cur != null ? cur.getCurrentPrice() : BigDecimal.ZERO,
                     null, -1));
-            return;
+
+        } catch (InvalidBidException e) {
+            System.err.println("[InvalidBidException] " + e.getMessage()
+                    + (e.getCurrentPrice() >= 0
+                    ? " (current=" + e.getCurrentPrice()
+                      + ", attempted=" + e.getAttemptedPrice() + ")"
+                    : ""));
+            Auction cur = auctionService.getAuctionById(req.getAuctionId());
+            send(new BidResponse(e.getMessage(), sessionId,
+                    false, req.getAuctionId(),
+                    cur != null ? cur.getCurrentPrice() : BigDecimal.ZERO,
+                    null, -1));
         }
-
-        // Lưu lịch sử bid
-        boolean bidSaved = bidService.placeBid(auctionId, user.getId(), amount);
-        if (!bidSaved) {
-            send(new BidResponse("Lưu lịch sử bid thất bại", sessionId,
-                    false, auctionId, auction.getCurrentPrice(), null, -1));
-            return;
-        }
-
-        Auction updated = auctionService.getAuctionById(auctionId);
-        BidResponse response = new BidResponse(
-                "Đặt giá thành công", sessionId, true,
-                auctionId, updated.getCurrentPrice(),
-                LocalDateTime.now(), user.getId());
-
-        broadcastAll(gson.toJson(response));
-        System.out.println("Bid mới: auction=" + auctionId + " amount=" + amount);
     }
 
     // ── ADD_ITEM ──────────────────────────────────────────────────────────────
 
     public void handleAddItem(AddItemRequest req) {
-        User user = ServerSessionManager.getInstance().getUser(req.getSessionId());
-        if (user == null) {
-            send(new AddItemResponse("Chưa đăng nhập", null, false, -1, -1, null));
-            return;
+        try {
+            User user = ServerSessionManager.getInstance().getUser(req.getSessionId());
+            if (user == null) {
+                throw new AuthenticationException("Chưa đăng nhập");
+            }
+            send(new AddItemResponse("Not implemented", req.getSessionId(), false, -1, -1, null));
+        } catch (AuthenticationException e) {
+            System.err.println("[AuthenticationException] " + e.getMessage());
+            send(new AddItemResponse(e.getMessage(), null, false, -1, -1, null));
         }
-        send(new AddItemResponse("Not implemented", req.getSessionId(), false, -1, -1, null));
     }
 
     // ── AUTO_BID ──────────────────────────────────────────────────────────────
+    // AutoBid được xử lý hoàn toàn client-side bởi AutoBidManager.
+    // handleAutoBid() chỉ validate và confirm — không còn snipe mode.
 
     public void handleAutoBid(AutoBidRequest req) {
-        User user = ServerSessionManager.getInstance().getUser(req.getSessionId());
-        if (user == null) {
-            send(new AutoBidResponse("Not authenticated", req.getSessionId(),
+        try {
+            User user = ServerSessionManager.getInstance().getUser(req.getSessionId());
+            if (user == null) {
+                throw new AuthenticationException("Not authenticated");
+            }
+            Auction auction = auctionService.getAuctionById(req.getAuctionId());
+            if (auction == null || auction.getStatus() != AuctionStatus.OPEN) {
+                throw new AuctionClosedException("Auction not open", req.getAuctionId());
+            }
+            send(new AutoBidResponse("AutoBid registered", req.getSessionId(),
+                    true, req.getAuctionId(), req.getMaxPrice(), req.getStep(),
+                    false, 0, true));
+            System.out.println("AutoBid: user=" + user.getAccount()
+                    + " auction=" + req.getAuctionId()
+                    + " maxPrice=" + req.getMaxPrice());
+
+        } catch (AuthenticationException e) {
+            System.err.println("[AuthenticationException] " + e.getMessage());
+            send(new AutoBidResponse(e.getMessage(), req.getSessionId(),
                     false, req.getAuctionId(), null, null, false, 0, false));
-            return;
-        }
-        Auction auction = auctionService.getAuctionById(req.getAuctionId());
-        if (auction == null || auction.getStatus() != AuctionStatus.OPEN) {
-            send(new AutoBidResponse("Auction not open", req.getSessionId(),
+
+        } catch (AuctionClosedException e) {
+            System.err.println("[AuctionClosedException] auctionId=" + e.getAuctionId()
+                    + " - " + e.getMessage());
+            send(new AutoBidResponse(e.getMessage(), req.getSessionId(),
                     false, req.getAuctionId(), req.getMaxPrice(), req.getStep(),
-                    req.isSnipeMode(), req.getSnipeSeconds(), false));
-            return;
+                    false, 0, false));
         }
-        send(new AutoBidResponse("AutoBid registered", req.getSessionId(),
-                true, req.getAuctionId(), req.getMaxPrice(), req.getStep(),
-                req.isSnipeMode(), req.getSnipeSeconds(), true));
-        System.out.println("AutoBid: user=" + user.getAccount()
-                + " auction=" + req.getAuctionId()
-                + " maxPrice=" + req.getMaxPrice()
-                + " snipe=" + req.isSnipeMode());
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
