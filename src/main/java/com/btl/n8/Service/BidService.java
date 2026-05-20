@@ -15,7 +15,7 @@ public class BidService {
         this.bidDAO = bidDAO;
     }
 
-    public boolean placeBid(int auctionId, int bidderId, BigDecimal amount) {
+    public synchronized boolean placeBid(int auctionId, int bidderId, BigDecimal amount) {
         Bid highest = bidDAO.findHighestBid(auctionId);
         if (highest != null && amount.compareTo(highest.getAmount()) <= 0) {
             return false;
