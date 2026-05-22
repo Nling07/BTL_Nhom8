@@ -88,10 +88,21 @@ public class BidController implements ServerResponseListener {
                     setGraphic(null);
                 } else {
                     ItemRow row = getTableRow().getItem();
-                    boolean canBid = row != null
-                            && row.getAuctionId() != -1
-                            && "OPEN".equals(row.getStatus());
-                    btn.setDisable(!canBid);
+                    if (row == null) { setGraphic(null); return; }
+
+                    int currentUserId = SessionManager.getInstance().getCurrentUser().getId();
+                    boolean isOwnItem = row.getSellerId() == currentUserId;
+                    boolean auctionOpen = row.getAuctionId() != -1 && "OPEN".equals(row.getStatus());
+
+                    btn.setDisable(!auctionOpen || isOwnItem);
+
+                    if (isOwnItem) {
+                        btn.setText("Của bạn");
+                        btn.setStyle("-fx-opacity: 0.5;");
+                    } else {
+                        btn.setText("Bid");
+                        btn.setStyle("");
+                    }
                     setGraphic(btn);
                 }
             }
@@ -130,7 +141,8 @@ public class BidController implements ServerResponseListener {
                                     ? String.format("%,.0f ₫", r.currentPrice)
                                     : "-",
                             r.status != null ? r.status : "NO AUCTION",
-                            r.auctionId
+                            r.auctionId,
+                            r.sellerId
                     ));
                 }
 
@@ -316,6 +328,7 @@ public class BidController implements ServerResponseListener {
     public static class ItemRow {
         private final int id;
         private final int auctionId;
+        private final int sellerId;
         private final SimpleStringProperty idProp;
         private final SimpleStringProperty name;
         private final SimpleStringProperty type;
@@ -323,9 +336,10 @@ public class BidController implements ServerResponseListener {
         private final SimpleStringProperty status;
 
         public ItemRow(int id, String name, String type,
-                       String price, String status, int auctionId) {
+                       String price, String status, int auctionId, int sellerId) {
             this.id        = id;
             this.auctionId = auctionId;
+            this.sellerId  = sellerId;
             this.idProp    = new SimpleStringProperty(String.valueOf(id));
             this.name      = new SimpleStringProperty(name);
             this.type      = new SimpleStringProperty(type);
@@ -341,6 +355,7 @@ public class BidController implements ServerResponseListener {
 
         public int    getId()        { return id; }
         public int    getAuctionId() { return auctionId; }
+        public int    getSellerId()  { return sellerId; }
         public String getName()      { return name.get(); }
         public String getType()      { return type.get(); }
         public String getPrice()     { return price.get(); }
@@ -357,16 +372,18 @@ public class BidController implements ServerResponseListener {
         public java.math.BigDecimal currentPrice;
         public String status;
         public int    auctionId;
+        public int    sellerId;
 
         public ItemAuctionRow(int itemId, String itemName, String itemType,
                               java.math.BigDecimal currentPrice,
-                              String status, int auctionId) {
+                              String status, int auctionId, int sellerId) {
             this.itemId       = itemId;
             this.itemName     = itemName;
             this.itemType     = itemType;
             this.currentPrice = currentPrice;
             this.status       = status;
             this.auctionId    = auctionId;
+            this.sellerId     = sellerId;
         }
     }
 }

@@ -105,6 +105,16 @@ public class AutoBidController {
             return;
         }
 
+        // Kiểm tra balance: maxPrice không được vượt quá balance hiện tại
+        com.btl.n8.Model.Entity.User currentUser = SessionManager.getInstance().getCurrentUser();
+        java.math.BigDecimal balance = currentUser != null && currentUser.getBalance() != null
+                ? currentUser.getBalance() : java.math.BigDecimal.ZERO;
+        if (maxPrice.compareTo(balance) > 0) {
+            showMsg(String.format("Số dư không đủ!\nBalance: %s\nMax Price: %s",
+                    fmt(balance), fmt(maxPrice)), false);
+            return;
+        }
+
         int bidderId = SessionManager.getInstance().getCurrentUser().getId();
 
         AutoBidManager.getInstance().activate(

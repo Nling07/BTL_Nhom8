@@ -3,7 +3,9 @@ package com.btl.n8.Controller;
 import com.btl.n8.Connection.*;
 import com.btl.n8.Model.Entity.Auction;
 import com.btl.n8.Model.Entity.Item;
+import com.btl.n8.Model.Entity.User;
 import com.btl.n8.Model.Enums.AuctionStatus;
+import com.btl.n8.Model.Enums.Role;
 import com.btl.n8.Service.AuctionService;
 import com.btl.n8.Util.FileUtils;
 import com.btl.n8.Service.ItemService;
@@ -54,7 +56,30 @@ public class SellController {
 
     @FXML
     public void initialize() {
-        sellerId = SessionManager.getInstance().getCurrentUser().getId();
+        User user = SessionManager.getInstance().getCurrentUser();
+
+        // Chặn người không phải SELLER
+        if (user == null || user.getRole() != Role.SELLER) {
+            javafx.application.Platform.runLater(() -> {
+                Alert alert = new Alert(Alert.AlertType.WARNING);
+                alert.setTitle("Không có quyền");
+                alert.setHeaderText(null);
+                alert.setContentText("Chỉ Seller mới có thể đăng bán sản phẩm.\nHãy nâng cấp tài khoản tại trang Home.");
+                alert.showAndWait();
+                // Trở về Home
+                try {
+                    Parent root = FXMLLoader.load(getClass().getResource("/fxml/home.fxml"));
+                    Stage stage = (Stage) nameField.getScene().getWindow();
+                    stage.setScene(new Scene(root));
+                    stage.show();
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            });
+            return;
+        }
+
+        sellerId = user.getId();
         typeCombo.setItems(FXCollections.observableArrayList("POSTER", "FIGURE", "CARD"));
 
         colId.setCellValueFactory(new PropertyValueFactory<>("id"));

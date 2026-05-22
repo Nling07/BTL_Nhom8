@@ -293,7 +293,52 @@ public class BidDetailController implements ServerResponseListener {
     @Override
     public void onRespone(JsonObject response) {
         if (!response.has("action")) return;
-        if (!"BID_UPDATE".equals(response.get("action").getAsString())) return;
+        String action = response.get("action").getAsString();
+
+        if ("AUCTION_SETTLED".equals(action)) {
+            com.btl.n8.DTO.AuctionSettledResponse settled =
+                    gson.fromJson(response, com.btl.n8.DTO.AuctionSettledResponse.class);
+            if (settled.getAuctionId() != this.auctionId) return;
+
+            Platform.runLater(() -> {
+                if (countdownTimer != null) countdownTimer.cancel();
+                bidInput.setDisable(true);
+                timerLabel.setText("Ended");
+                if (auction != null) {
+                    auction.setStatus(AuctionStatus.CLOSED);
+                    updateAuctionStatus();
+                }
+                new Thread(() -> {
+                    try {
+                        java.sql.Connection conn = com.btl.n8.Connection.DataConnection.getConnection();
+                        if (conn != null) {
+                            com.btl.n8.Model.Entity.User updated =
+                                    new com.btl.n8.Connection.UserDAOImpl(conn)
+                                            .findById(SessionManager.getInstance().getCurrentUser().getId());
+                            if (updated != null) SessionManager.getInstance().setCurrentUser(updated);
+                        }
+                    } catch (Exception ignored) {}
+                }).start();
+
+                if (settled.getWinnerId() == -1) {
+                    showSettledDialog("Ph\u00eci\u00ean \u0111\u1ea5u gi\u00e1 k\u1ebft th\u00fac",
+                            "Kh\u00f4ng c\u00f3 ng\u01b0\u1eddi tham gia \u0111\u1eb7t gi\u00e1.", false);
+                } else if (settled.isWinner()) {
+                    showSettledDialog("\ud83c\udfc6 B\u1ea1n \u0111\u00e3 th\u1eafng!",
+                            String.format("Ch\u00fac m\u1eebng! B\u1ea1n th\u1eafng v\u1edbi gi\u00e1 %s.\nBalance \u0111\u00e3 b\u1ecb tr\u1eeb t\u1ef1 \u0111\u1ed9ng.",
+                                    fmt(settled.getWinningPrice())), true);
+                } else {
+                    showSettledDialog("Ph\u00eci\u00ean \u0111\u1ea5u gi\u00e1 k\u1ebft th\u00fac",
+                            String.format("Ng\u01b0\u1eddi th\u1eafng: %s\nGi\u00e1 th\u1eafng: %s",
+                                    settled.getWinnerAccount(),
+                                    fmt(settled.getWinningPrice())), false);
+                }
+            });
+            return;
+        }
+
+        // \u2500\u2500 BID_UPDATE \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+        if (!"BID_UPDATE".equals(action)) return;
 
         BidResponse res = gson.fromJson(response, BidResponse.class);
         if (res.getAuctionId() != this.auctionId) return;
@@ -482,6 +527,16 @@ public class BidDetailController implements ServerResponseListener {
                 ? "-fx-text-fill: #00ff88; -fx-font-size: 12px;"
                 : "-fx-text-fill: #ff6b6b; -fx-font-size: 12px;");
         bidMsg.setText(msg);
+    }
+
+    private void showSettledDialog(String title, String content, boolean isWinner) {
+        javafx.scene.control.Alert alert = new javafx.scene.control.Alert(
+                isWinner ? javafx.scene.control.Alert.AlertType.INFORMATION
+                        : javafx.scene.control.Alert.AlertType.INFORMATION);
+        alert.setTitle(title);
+        alert.setHeaderText(null);
+        alert.setContentText(content);
+        alert.showAndWait();
     }
 
     private String fmt(BigDecimal n) {

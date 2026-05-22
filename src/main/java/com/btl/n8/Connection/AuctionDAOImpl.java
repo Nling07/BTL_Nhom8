@@ -26,6 +26,7 @@ public class AuctionDAOImpl implements AuctionDAO {
                 i.item_id,
                 i.name       AS item_name,
                 i.type       AS item_type,
+                i.seller_id,
                 a.auction_id,
                 a.current_price,
                 a.status
@@ -39,6 +40,7 @@ public class AuctionDAOImpl implements AuctionDAO {
                 int itemId         = rs.getInt("item_id");
                 String itemName    = rs.getString("item_name");
                 String itemType    = rs.getString("item_type");
+                int sellerId       = rs.getInt("seller_id");
                 int auctionId      = rs.getInt("auction_id");
                 boolean hasAuction = !rs.wasNull();
                 BigDecimal price   = rs.getBigDecimal("current_price");
@@ -47,7 +49,8 @@ public class AuctionDAOImpl implements AuctionDAO {
                         itemId, itemName, itemType,
                         hasAuction ? price  : null,
                         hasAuction ? status : null,
-                        hasAuction ? auctionId : -1
+                        hasAuction ? auctionId : -1,
+                        sellerId
                 ));
             }
         } catch (SQLException e) {

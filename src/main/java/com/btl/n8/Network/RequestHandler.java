@@ -110,7 +110,7 @@ public class RequestHandler {
             // Check hết giờ
             if (now.isAfter(auction.getEndTime())) {
                 if (auction.getStatus() == AuctionStatus.OPEN) {
-                    auctionService.closeAuction(auctionId);
+                    settleAuction(auctionId);
                 }
                 throw new AuctionClosedException("Phiên đấu giá đã kết thúc", auctionId);
             }
@@ -126,6 +126,21 @@ public class RequestHandler {
                         amount.doubleValue()
                 );
             }
+
+            // ── BALANCE CHECK ─────────────────────────────────────────────────
+            // Kiểm tra số dư: amount đặt không được vượt quá balance
+            BigDecimal userBalance = user.getBalance() != null ? user.getBalance() : java.math.BigDecimal.ZERO;
+            if (amount.compareTo(userBalance) > 0) {
+                Auction cur = auctionService.getAuctionById(auctionId);
+                send(new BidResponse("Số dư không đủ! Số dư hiện tại: "
+                        + String.format("%,.0f ₫", userBalance)
+                        + " — Cần: " + String.format("%,.0f ₫", amount),
+                        sessionId, false, auctionId,
+                        cur != null ? cur.getCurrentPrice() : java.math.BigDecimal.ZERO,
+                        null, -1));
+                return;
+            }
+            // ─────────────────────────────────────────────────────────────────
 
             // Update giá
             boolean auctionUpdated = auctionService.placeBid(auctionId, amount);
@@ -196,6 +211,12 @@ public class RequestHandler {
                     cur != null ? cur.getCurrentPrice() : BigDecimal.ZERO,
                     null, -1));
         }
+    }
+
+    // ── SETTLE AUCTION ────────────────────────────────────────────────────────
+    // Delegate sang SettlementHandler để tránh duplicate logic.
+    public void settleAuction(int auctionId) {
+        new SettlementHandler(clients).settleAuction(auctionId);
     }
 
     // ── ADD_ITEM ──────────────────────────────────────────────────────────────
