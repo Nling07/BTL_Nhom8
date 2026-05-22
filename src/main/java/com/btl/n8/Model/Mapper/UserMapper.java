@@ -33,12 +33,11 @@ public class UserMapper {
                 );
 
             case SELLER:
-
-                return new Seller(
-                        id,
-                        account,
-                        password
-                );
+                // Seller vẫn giữ balance từ bảng bidders (vì upgradeToSeller không xóa bidder row)
+                BigDecimal sellerBalance = rs.getBigDecimal("balance");
+                Seller seller = new Seller(id, account, password);
+                seller.setBalance(sellerBalance);
+                return seller;
 
             case ADMIN:
 

@@ -128,6 +128,14 @@ public class UserDAOImpl implements UserDAO {
                         ps2.setInt(2, user.getId());
                         ps2.executeUpdate();
                     }
+                } else if (user instanceof Seller && user.getBalance() != null) {
+                    // Seller cũng lưu balance qua bảng bidders (row vẫn tồn tại sau upgradeToSeller)
+                    String sql2 = "UPDATE bidders SET balance = ? WHERE user_id = ?";
+                    try (PreparedStatement ps2 = conn.prepareStatement(sql2)) {
+                        ps2.setBigDecimal(1, user.getBalance());
+                        ps2.setInt(2, user.getId());
+                        ps2.executeUpdate();
+                    }
                 }
                 return true;
             }
