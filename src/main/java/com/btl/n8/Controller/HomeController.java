@@ -7,6 +7,7 @@ import com.btl.n8.Model.Entity.Bidder;
 import com.btl.n8.Model.Entity.User;
 import com.btl.n8.Model.Enums.Role;
 
+import com.btl.n8.Network.ClientSocket;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
@@ -179,6 +180,11 @@ public class HomeController {
     public void logout(ActionEvent event) throws Exception {
         AutoBidManager.getInstance().cancelAll();
         SessionManager.getInstance().logout();
+        SessionManager.getInstance().setCurrentUser(null);
+        SessionManager.getInstance().setSessionId(null);
+        ClientSocket.getInstance().close();
+        ClientSocket.getInstance().reset();
+        
         Parent root = FXMLLoader.load(getClass().getResource("/fxml/login.fxml"));
         Stage stage = (Stage)((Node)event.getSource()).getScene().getWindow();
         stage.setScene(new Scene(root));

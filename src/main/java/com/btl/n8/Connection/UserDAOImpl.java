@@ -113,16 +113,19 @@ public class UserDAOImpl implements UserDAO {
 
     @Override
     public boolean update(User user) {
-        String sql = "UPDATE users SET account = ?, password = ? WHERE user_id = ?";
+        // FIX CRITICAL: câu SQL cũ UPDATE cả password → khi deposit() gọi update(user),
+        // user lấy từ SessionManager có password = "" (client không giữ password thật
+        // sau login) → ghi đè password trong DB thành "" → lần sau login báo sai mật khẩu.
+        // Fix: chỉ update account, KHÔNG update password.
+        // Nếu sau này cần đổi password, tạo method riêng updatePassword().
+        String sql = "UPDATE users SET account = ? WHERE user_id = ?";
 
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, user.getAccount());
-            ps.setString(2, user.getPassword());
-            ps.setInt(3, user.getId());
+            ps.setInt(2, user.getId());
 
             if (ps.executeUpdate() > 0) {
                 if (user instanceof Bidder bidder) {
-                    // UPSERT: tạo row nếu chưa có (an toàn hơn UPDATE đơn thuần)
                     String sql2 = """
                         INSERT INTO bidders(user_id, balance) VALUES(?, ?)
                         ON DUPLICATE KEY UPDATE balance = VALUES(balance)
@@ -133,7 +136,6 @@ public class UserDAOImpl implements UserDAO {
                         ps2.executeUpdate();
                     }
                 } else if (user.getBalance() != null) {
-                    // Seller (hoặc role khác) — cũng dùng UPSERT vào bidders
                     String sql2 = """
                         INSERT INTO bidders(user_id, balance) VALUES(?, ?)
                         ON DUPLICATE KEY UPDATE balance = VALUES(balance)
