@@ -1,132 +1,67 @@
-package com.btl.n8.Controller;
+<?xml version="1.0" encoding="UTF-8"?>
 
-        import com.btl.n8.Model.Entity.Admin;
-        import com.btl.n8.Model.Entity.Bidder;
-        import com.btl.n8.Model.Entity.Seller;
-        import com.btl.n8.Model.Entity.User;
-        import com.btl.n8.Model.Enums.Role;
-        import com.btl.n8.DTO.LoginRequest;
-        import com.btl.n8.DTO.LoginResponse;
-        import com.btl.n8.Network.ClientSocket;
-        import com.btl.n8.Network.ServerResponseListener;
-        import com.google.gson.Gson;
-        import com.google.gson.JsonObject;
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.PasswordField?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.image.Image?>
+<?import javafx.scene.image.ImageView?>
+<?import javafx.scene.layout.AnchorPane?>
+<?import javafx.scene.text.Font?>
 
-        import javafx.application.Platform;
-        import javafx.event.ActionEvent;
-        import javafx.fxml.FXML;
-        import javafx.fxml.FXMLLoader;
-        import javafx.scene.Node;
-        import javafx.scene.Parent;
-        import javafx.scene.Scene;
-        import javafx.scene.control.Label;
-        import javafx.scene.control.PasswordField;
-        import javafx.scene.control.TextField;
-        import javafx.stage.Stage;
+<AnchorPane layoutX="1.0" maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="532.0" prefWidth="899.0" xmlns="http://javafx.com/javafx/25" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.btl.n8.Controller.RegisterController">
+    <children>
+        <ImageView fitHeight="532.0" fitWidth="904.0" layoutX="-5.0" mouseTransparent="true" pickOnBounds="true" AnchorPane.bottomAnchor="0.0" AnchorPane.leftAnchor="-5.0" AnchorPane.rightAnchor="-1.0" AnchorPane.topAnchor="0.0">
+            <image>
+                <Image url="@../images/Theme.png" />
+            </image>
+        </ImageView>
 
-        import java.math.BigDecimal;
+        <TextField fx:id="usernameField" layoutX="378.0" layoutY="216.0" stylesheets="@../css/style.css" />
+        <Label layoutX="382.0" layoutY="189.0" prefHeight="26.0" prefWidth="150.0" text="User Name" textFill="GOLD">
+            <font>
+                <Font name="Press Start 2P" size="14.0" />
+            </font>
+        </Label>
 
-        public class LoginController implements ServerResponseListener {
+        <Label layoutX="381.0" layoutY="245.0" prefHeight="27.0" prefWidth="132.0" text="Password" textFill="#ffd700">
+            <font>
+                <Font name="Press Start 2P" size="14.0" />
+            </font>
+        </Label>
+        <PasswordField fx:id="passwordField" layoutX="379.0" layoutY="273.0" stylesheets="@../css/style.css" />
 
-        @FXML private TextField usernameField;
-        @FXML private PasswordField passwordField;
-        @FXML private Label messageLabel;
+        <Label layoutX="348.0" layoutY="295.0" prefHeight="26.0" prefWidth="224.0" text="Re-enter Password" textFill="GOLD">
+           <font>
+              <Font name="Press Start 2P" size="13.0" />
+           </font>
+        </Label>
+        <PasswordField fx:id="rePasswordField" layoutX="380.0" layoutY="322.0" stylesheets="@../css/style.css" />
 
-        private static final Gson gson = new Gson();
-        private ActionEvent lastEvent;
+        <Button layoutX="426.0" layoutY="358.0" mnemonicParsing="false" onAction="#handleRegister" prefHeight="18.0" prefWidth="65.0" text="Register" />
 
-        @FXML
-        public void initialize() {
-        // Xóa listener cũ (nếu có) trước khi thêm mới.
-        // Tránh tích lũy nhiều LoginController listener sau mỗi lần logout → login lại.
-        ClientSocket.getInstance().removeListener(this);
-        ClientSocket.getInstance().addListener(this);
-        }
+        <Label fx:id="messageLabel" layoutX="350.0" layoutY="340.0" prefHeight="25.0" prefWidth="250.0" text="" textFill="RED" visible="false" />
 
-        public void handleLogin(ActionEvent event) {
-        this.lastEvent = event;
-        messageLabel.setText("Connecting...");
-        messageLabel.setVisible(true);
-
-        String username = usernameField.getText().trim();
-        String password = passwordField.getText().trim();
-
-        if (username.isEmpty() || password.isEmpty()) {
-        messageLabel.setText("Please enter username and password");
-        messageLabel.setVisible(true);
-        return;
-        }
-
-        new Thread(() -> {
-        // Nếu socket bị đóng hoặc server đã restart, reset và kết nối lại
-        if (!ClientSocket.getInstance().isConnected()) {
-        ClientSocket.getInstance().reset();
-        boolean ok = ClientSocket.getInstance().connect();
-        if (!ok) {
-        Platform.runLater(() -> {
-        messageLabel.setText("Cannot connect to server!");
-        messageLabel.setVisible(true);
-        });
-        return;
-        }
-        }
-        ClientSocket.getInstance().sendMessage(new LoginRequest(username, password));
-        }).start();
-        }
-
-        @Override
-        public void onRespone(JsonObject response) {
-        String action = response.get("action").getAsString();
-        if (!"LOGIN_SUCCESS".equals(action)) return;
-
-        LoginResponse res = gson.fromJson(response, LoginResponse.class);
-
-        Platform.runLater(() -> {
-        if (!res.isSuccess()) {
-        messageLabel.setText(res.getMessage());
-        messageLabel.setVisible(true);
-        return;
-        }
-
-        User user = buildUser(res);
-        SessionManager.getInstance().setCurrentUser(user);
-        SessionManager.getInstance().setSessionId(res.getSessionId());
-        ClientSocket.getInstance().removeListener(this);
-
-        try {
-        String fxml = res.getRole() == Role.ADMIN
-        ? "/fxml/admin.fxml"
-        : "/fxml/home.fxml";
-        Parent root = FXMLLoader.load(getClass().getResource(fxml));
-        Stage stage = (Stage)((Node)lastEvent.getSource()).getScene().getWindow();
-        stage.setScene(new Scene(root));
-        stage.show();
-        } catch (Exception e) {
-        e.printStackTrace();
-        }
-        });
-        }
-
-        private User buildUser(LoginResponse res) {
-        switch (res.getRole()) {
-        case BIDDER:
-        return new Bidder(res.getUserId(), res.getUsername(), "",
-        res.getBalance() != null ? res.getBalance() : BigDecimal.ZERO);
-        case SELLER:
-        // Seller vẫn có balance (vì upgradeToSeller giữ lại row bidders)
-        Seller seller = new Seller(res.getUserId(), res.getUsername(), "");
-        seller.setBalance(res.getBalance() != null ? res.getBalance() : BigDecimal.ZERO);
-        return seller;
-        default:
-        return new Admin(res.getUserId(), res.getUsername(), "");
-        }
-        }
-
-        public void goRegister(ActionEvent event) throws Exception {
-        ClientSocket.getInstance().removeListener(this);
-        Parent root = FXMLLoader.load(getClass().getResource("/fxml/register.fxml"));
-        Stage stage = (Stage)((Node)event.getSource()).getScene().getWindow();
-        stage.setScene(new Scene(root));
-        stage.show();
-        }
-        }
+        <ImageView fitHeight="34.0" fitWidth="73.0" layoutX="423.0" layoutY="357.0" mouseTransparent="true" pickOnBounds="true" preserveRatio="true">
+            <image>
+                <Image url="@../images/register.png" />
+            </image>
+        </ImageView>
+        <Button layoutX="379.0" layoutY="397.0" mnemonicParsing="false" onAction="#goLogin" prefHeight="20.0" prefWidth="160.0" text="Creat" />
+        <ImageView fitHeight="28.0" fitWidth="172.0" layoutX="373.0" layoutY="396.0" mouseTransparent="true" pickOnBounds="true" preserveRatio="true">
+            <image>
+                <Image url="@../images/alreadyhaveone.png" />
+            </image>
+        </ImageView>
+        <ImageView fitHeight="83.0" fitWidth="84.0" layoutX="57.0" layoutY="45.0" pickOnBounds="true" preserveRatio="true">
+            <image>
+                <Image url="@../images/logo.jpg" />
+            </image>
+        </ImageView>
+      <Label layoutX="318.0" layoutY="87.0" prefHeight="93.0" prefWidth="261.0" text="Register" textFill="#424700" AnchorPane.bottomAnchor="352.2" AnchorPane.leftAnchor="318.0" AnchorPane.rightAnchor="319.5999999999999" AnchorPane.topAnchor="87.0">
+         <font>
+            <Font name="Press Start 2P" size="30.0" />
+         </font>
+      </Label>
+    </children>
+</AnchorPane>
