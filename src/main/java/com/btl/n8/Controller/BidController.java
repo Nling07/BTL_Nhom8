@@ -229,8 +229,11 @@ public class BidController implements ServerResponseListener {
                             refreshTableFromDB();
                         });
 
-                        popup.show();
+                        // FIX: initData() TRƯỚC popup.show() — đảm bảo listener socket
+                        // và auctionService đã sẵn sàng trước khi UI hiện ra.
+                        // Nếu server gửi BID_UPDATE ngay lúc popup mở, sẽ không bị NPE.
                         controller.initData(row.getAuctionId(), item);
+                        popup.show();
 
                     } catch (Exception ex) {
                         showError("Failed to open auction: " + ex.getMessage());

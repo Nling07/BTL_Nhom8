@@ -150,10 +150,15 @@ public class AutoBidManager implements ServerResponseListener {
             }
         }
 
-        // Chỉ react khi người khác bid
+        // FIX: chỉ react khi người vừa bid KHÔNG phải chính mình.
+        // Điều này ngăn AutoBid tự kích hoạt lại ngay sau khi vừa đặt giá thành công,
+        // tránh vòng lặp vô tận trong trường hợp nhiều phiên / nhiều client cùng user.
         if (res.getBidderId() != session.bidderId) {
             Platform.runLater(() -> checkAndBid(session));
         }
+        // Nếu chính mình vừa bid thành công nhờ AutoBid: không làm gì thêm.
+        // currentPrice đã được cập nhật ở trên — lần bid tiếp theo (nếu cần) sẽ
+        // được trigger khi CÓ người khác vượt giá.
     }
 
     // ── AutoBid logic ─────────────────────────────────────────────────────────
@@ -167,15 +172,24 @@ public class AutoBidManager implements ServerResponseListener {
             return;
         }
 
-        BigDecimal nextBid = session.auction.getCurrentPrice().add(session.step);
+        BigDecimal currentPrice = session.auction.getCurrentPrice();
+        BigDecimal nextBid = currentPrice.add(session.step);
 
+        // Cap nextBid tại maxPrice thay vì dừng ngay:
+        // Nếu nextBid vượt maxPrice nhưng maxPrice vẫn > currentPrice
+        // → thử bid đúng bằng maxPrice (bid hợp lệ cuối cùng)
         if (nextBid.compareTo(session.maxPrice) > 0) {
-            cancelSilent(session.auctionId);
-            notifyUI(session.auctionId, "STOPPED:Max price reached – AutoBid stopped.");
-            return;
+            if (session.maxPrice.compareTo(currentPrice) > 0) {
+                nextBid = session.maxPrice; // bid bằng đúng maxPrice
+            } else {
+                // maxPrice cũng không vượt được currentPrice → thực sự hết
+                cancelSilent(session.auctionId);
+                notifyUI(session.auctionId, "STOPPED:Đã đạt giá tối đa – AutoBid dừng.");
+                return;
+            }
         }
 
-        // Kiểm tra balance: nextBid không được vượt quá balance hiện tại
+        // Kiểm tra balance: nextBid không được vượt balance hiện tại
         com.btl.n8.Model.Entity.User currentUser = SessionManager.getInstance().getCurrentUser();
         BigDecimal balance = currentUser != null && currentUser.getBalance() != null
                 ? currentUser.getBalance() : BigDecimal.ZERO;
@@ -185,11 +199,15 @@ public class AutoBidManager implements ServerResponseListener {
             return;
         }
 
+        final BigDecimal bidAmount = nextBid;
         new Thread(() -> {
-            BidRequest req = new BidRequest(session.auctionId, session.bidderId, nextBid);
+            // Delay nhỏ để chắc server đã commit bid trước trước khi gửi bid tiếp
+            try { Thread.sleep(300); } catch (InterruptedException ignored) {}
+            if (!session.active.get()) return; // check lại sau delay
+            BidRequest req = new BidRequest(session.auctionId, session.bidderId, bidAmount);
             req.setSessionId(SessionManager.getInstance().getSessionId());
             ClientSocket.getInstance().sendMessage(req);
-            notifyUI(session.auctionId, "BID_PLACED:" + nextBid.toPlainString());
+            notifyUI(session.auctionId, "BID_PLACED:" + bidAmount.toPlainString());
         }).start();
     }
     // ── Internal ──────────────────────────────────────────────────────────────

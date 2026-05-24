@@ -48,7 +48,7 @@ public class BidDAOImpl implements BidDAO {
     @Override
     public List<Bid> findByAuction(int auctionId) {
         List<Bid> list = new ArrayList<>();
-        String sql = "SELECT * FROM bids WHERE auction_id = ? ORDER BY amount DESC";
+        String sql = "SELECT * FROM bids WHERE auction_id = ? ORDER BY bid_time ASC";
 
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, auctionId);

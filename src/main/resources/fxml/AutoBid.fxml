@@ -3,7 +3,6 @@
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
 <?import javafx.scene.text.*?>
-<?import javafx.scene.image.*?>
 
 <VBox spacing="0"
       xmlns="http://javafx.com/javafx/25"
@@ -15,17 +14,16 @@
     <!-- Header -->
     <HBox alignment="CENTER_LEFT" spacing="10"
           style="-fx-padding: 14 18 14 18; -fx-border-color: #1a3a5c; -fx-border-width: 0 0 1 0; -fx-background-color: #0a1628; -fx-background-radius: 10 10 0 0;">
-        <Label text="⚡" style="-fx-font-size: 18px;"/>
+        <Label text="&#x26A1;" style="-fx-font-size: 18px;"/>
         <Label text="Auto Bid" textFill="#00ff88">
             <font><Font name="Press Start 2P" size="13.0"/></font>
         </Label>
         <Region HBox.hgrow="ALWAYS"/>
-        <!-- Status badge -->
         <Label fx:id="statusBadge" text="OFF"
                style="-fx-background-color: #333a4a; -fx-text-fill: #888; -fx-padding: 3 10 3 10; -fx-background-radius: 99;">
             <font><Font name="Press Start 2P" size="7.0"/></font>
         </Label>
-        <Button fx:id="closeBtn" text="✕" onAction="#handleClose"
+        <Button fx:id="closeBtn" text="&#x2715;" onAction="#handleClose"
                 style="-fx-background-color: transparent; -fx-border-color: transparent; -fx-font-size: 16px; -fx-cursor: hand; -fx-text-fill: #00ff88;"/>
     </HBox>
 
@@ -47,7 +45,6 @@
         </Label>
     </HBox>
 
-    <!-- Divider -->
     <Separator style="-fx-background-color: #1a3a5c;"/>
 
     <!-- Settings area -->
@@ -59,7 +56,7 @@
                 <Label text="Max Price" textFill="#7ecfff">
                     <font><Font name="Press Start 2P" size="8.0"/></font>
                 </Label>
-                <Label text="(₫)" textFill="#555f6e">
+                <Label text="(&#x20AB;)" textFill="#555f6e">
                     <font><Font name="Press Start 2P" size="7.0"/></font>
                 </Label>
             </HBox>
@@ -75,7 +72,7 @@
                 <Label text="Bid Step" textFill="#7ecfff">
                     <font><Font name="Press Start 2P" size="8.0"/></font>
                 </Label>
-                <Label text="(₫)" textFill="#555f6e">
+                <Label text="(&#x20AB;)" textFill="#555f6e">
                     <font><Font name="Press Start 2P" size="7.0"/></font>
                 </Label>
             </HBox>
@@ -85,47 +82,23 @@
                        stylesheets="@../css/style.css"/>
         </VBox>
 
-        <!-- Snipe Mode section -->
-        <VBox spacing="10"
+        <!-- Anti-snipe info (read-only, server handles it automatically) -->
+        <VBox spacing="8"
               style="-fx-border-color: #1a3a5c; -fx-border-radius: 8; -fx-background-color: #0a1628; -fx-background-radius: 8; -fx-padding: 14 16 14 16;">
-
-            <HBox alignment="CENTER_LEFT" spacing="10">
-                <CheckBox fx:id="snipeModeCheck" onAction="#onSnipeToggle"
-                          style="-fx-text-fill: #ffd700; -fx-cursor: hand;">
-                    <graphic>
-                        <HBox spacing="8" alignment="CENTER_LEFT">
-                            <Label text="🎯" style="-fx-font-size: 14px;"/>
-                            <Label text="Bid Sniping" textFill="#ffd700">
-                                <font><Font name="Press Start 2P" size="8.0"/></font>
-                            </Label>
-                        </HBox>
-                    </graphic>
-                </CheckBox>
+            <HBox alignment="CENTER_LEFT" spacing="8">
+                <Label text="&#x23F0;" style="-fx-font-size: 14px;"/>
+                <Label text="Anti-Snipe: ON" textFill="#00ff88">
+                    <font><Font name="Press Start 2P" size="8.0"/></font>
+                </Label>
                 <Region HBox.hgrow="ALWAYS"/>
-                <Label text="NEW" style="-fx-background-color: #ff6b00; -fx-text-fill: white; -fx-padding: 2 6 2 6; -fx-background-radius: 4;">
+                <Label text="AUTO"
+                       style="-fx-background-color: #004d30; -fx-text-fill: #00ff88; -fx-padding: 2 6 2 6; -fx-background-radius: 4;">
                     <font><Font name="Press Start 2P" size="6.0"/></font>
                 </Label>
             </HBox>
-
-            <Label text="Auto places a bid only in the final seconds —&#10;surprises other bidders before time runs out."
+            <Label text="If a bid lands in the last 30s, the auction&#10;is automatically extended by 30s."
                    textFill="#7ecfff" wrapText="true"
                    style="-fx-font-size: 10px; -fx-padding: 0 0 0 4;"/>
-
-            <!-- Snipe seconds spinner (hidden when snipe off) -->
-            <HBox fx:id="snipeRow" alignment="CENTER_LEFT" spacing="12"
-                  visible="false" managed="false">
-                <Label text="Snipe at last" textFill="#aaa">
-                    <font><Font name="Press Start 2P" size="7.0"/></font>
-                </Label>
-                <Spinner fx:id="snipeSecondsSpinner"
-                         min="5" max="120" initialValue="10"
-                         prefWidth="80" prefHeight="34"
-                         editable="true"
-                         style="-fx-background-color: #112240; -fx-border-color: #1a3a5c; -fx-border-radius: 6; -fx-text-fill: #ffffff;"/>
-                <Label text="seconds" textFill="#aaa">
-                    <font><Font name="Press Start 2P" size="7.0"/></font>
-                </Label>
-            </HBox>
         </VBox>
 
     </VBox>
@@ -148,7 +121,7 @@
             <font><Font name="Press Start 2P" size="7.0"/></font>
         </Button>
 
-        <Button fx:id="activateBtn" text="⚡  Activate"
+        <Button fx:id="activateBtn" text="&#x26A1;  Activate"
                 onAction="#handleActivate"
                 prefHeight="36" prefWidth="140"
                 style="-fx-background-color: #00c96e; -fx-text-fill: #0a1628; -fx-border-color: transparent; -fx-border-radius: 6; -fx-background-radius: 6; -fx-cursor: hand;">
