@@ -37,6 +37,9 @@ public class LoginController implements ServerResponseListener {
 
     @FXML
     public void initialize() {
+        // FIX: remove trước rồi add — đảm bảo chỉ có đúng 1 instance
+        // listener dù load lại FXML nhiều lần (logout → login lại)
+        ClientSocket.getInstance().removeListener(this);
         ClientSocket.getInstance().addListener(this);
     }
 
@@ -54,9 +57,10 @@ public class LoginController implements ServerResponseListener {
             return;
         }
 
-        // Chạy connect + send trên background thread — không block UI
         new Thread(() -> {
+            // FIX: nếu socket cũ đã chết (server restart), reset trước khi connect lại
             if (!ClientSocket.getInstance().isConnected()) {
+                ClientSocket.getInstance().reset();
                 boolean ok = ClientSocket.getInstance().connect();
                 if (!ok) {
                     Platform.runLater(() -> {
@@ -66,7 +70,6 @@ public class LoginController implements ServerResponseListener {
                     return;
                 }
             }
-            // Gửi LoginRequest qua socket
             ClientSocket.getInstance().sendMessage(new LoginRequest(username, password));
         }).start();
     }
@@ -85,10 +88,12 @@ public class LoginController implements ServerResponseListener {
                 return;
             }
 
+            // Remove ngay khi xử lý xong — không để listener lơ lửng
+            ClientSocket.getInstance().removeListener(this);
+
             User user = buildUser(res);
             SessionManager.getInstance().setCurrentUser(user);
             SessionManager.getInstance().setSessionId(res.getSessionId());
-            ClientSocket.getInstance().removeListener(this);
 
             try {
                 String fxml = res.getRole() == Role.ADMIN
@@ -105,12 +110,17 @@ public class LoginController implements ServerResponseListener {
     }
 
     private User buildUser(LoginResponse res) {
-        return switch (res.getRole()) {
-            case BIDDER -> new Bidder(res.getUserId(), res.getUsername(), "",
-                    res.getBalance() != null ? res.getBalance() : BigDecimal.ZERO);
-            case SELLER -> new Seller(res.getUserId(), res.getUsername(), "");
-            default     -> new Admin(res.getUserId(), res.getUsername(), "");
-        };
+        switch (res.getRole()) {
+            case BIDDER:
+                return new Bidder(res.getUserId(), res.getUsername(), "",
+                        res.getBalance() != null ? res.getBalance() : BigDecimal.ZERO);
+            case SELLER:
+                Seller seller = new Seller(res.getUserId(), res.getUsername(), "");
+                seller.setBalance(res.getBalance() != null ? res.getBalance() : BigDecimal.ZERO);
+                return seller;
+            default:
+                return new Admin(res.getUserId(), res.getUsername(), "");
+        }
     }
 
     public void goRegister(ActionEvent event) throws Exception {

@@ -9,6 +9,7 @@ public class AuctionSettledResponse extends Response {
     private String     winnerAccount;
     private BigDecimal winningPrice;
     private boolean    isWinner;       // true nếu receiver chính là winner
+    private BigDecimal newBalance;     // balance mới của winner sau khi bị trừ, null với người thua
 
     public AuctionSettledResponse() { super(); }
 
@@ -24,6 +25,7 @@ public class AuctionSettledResponse extends Response {
         this.winnerAccount = winnerAccount;
         this.winningPrice  = winningPrice;
         this.isWinner      = false; // server set per-client trước khi gửi
+        this.newBalance    = null;
     }
 
     public int        getAuctionId()    { return auctionId; }
@@ -32,4 +34,6 @@ public class AuctionSettledResponse extends Response {
     public BigDecimal getWinningPrice() { return winningPrice; }
     public boolean    isWinner()        { return isWinner; }
     public void       setIsWinner(boolean w) { this.isWinner = w; }
+    public BigDecimal getNewBalance()   { return newBalance; }
+    public void       setNewBalance(BigDecimal b) { this.newBalance = b; }
 }

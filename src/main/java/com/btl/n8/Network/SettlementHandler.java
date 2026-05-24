@@ -17,14 +17,16 @@ import com.google.gson.GsonBuilder;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Xử lý việc kết thúc phiên đấu giá:
  *   1. Đóng auction (OPEN → CLOSED)
  *   2. Xác định winner (bid cao nhất)
  *   3. Trừ balance của winner
- *   4. Mark bid WINNER / OUTBID
+ *   4. Mark OUTBID tất cả bid còn lại, rồi mark bid cao nhất là WINNER
  *   5. Broadcast AUCTION_SETTLED tới tất cả client
  *
  * Tách khỏi RequestHandler để Server1 scheduler có thể tái dùng.
@@ -32,6 +34,10 @@ import java.util.concurrent.ConcurrentHashMap;
 public class SettlementHandler {
 
     private final ConcurrentHashMap<String, ClientHandler> clients;
+
+    // FIX: per-auction lock để tránh double-settle khi scheduler và handleBid() cùng trigger
+    private static final ConcurrentHashMap<Integer, ReentrantLock> settleLocks =
+            new ConcurrentHashMap<>();
 
     private static final Gson gson = new GsonBuilder()
             .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
@@ -42,10 +48,39 @@ public class SettlementHandler {
     }
 
     /**
-     * Settle auction. Idempotent: nếu auction đã CLOSED thì không làm gì thêm
-     * (tránh double-settle khi cả scheduler lẫn bid handler cùng trigger).
+     * Trừ balance bằng UPDATE SQL trực tiếp — atomic, không cần load object trước.
+     * Áp dụng cho cả Bidder lẫn Seller-upgrader (cùng dùng bảng bidders).
+     * Dùng GREATEST(..., 0) để tránh balance âm.
+     */
+    private boolean updateBalanceDirect(Connection conn, int userId, BigDecimal amount) {
+        String sql = "UPDATE bidders SET balance = GREATEST(balance - ?, 0) WHERE user_id = ?";
+        try (java.sql.PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setBigDecimal(1, amount);
+            ps.setInt(2, userId);
+            return ps.executeUpdate() > 0;
+        } catch (java.sql.SQLException e) {
+            System.err.println("[Settlement] updateBalanceDirect lỗi: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private ReentrantLock getSettleLock(int auctionId) {
+        return settleLocks.computeIfAbsent(auctionId, id -> new ReentrantLock(true));
+    }
+
+    /**
+     * Settle auction. Idempotent + thread-safe:
+     * chỉ một luồng được settle tại một thời điểm nhờ per-auction ReentrantLock.
      */
     public void settleAuction(int auctionId) {
+        ReentrantLock lock = getSettleLock(auctionId);
+
+        // Không block nếu luồng khác đang settle auction này
+        if (!lock.tryLock()) {
+            System.out.println("[Settlement] Auction " + auctionId + " đang được settle bởi luồng khác, bỏ qua.");
+            return;
+        }
+
         try {
             Connection conn = DataConnection.getConnection();
             if (conn == null) return;
@@ -58,17 +93,21 @@ public class SettlementHandler {
             if (auction == null) return;
 
             // Idempotent guard: đã settled rồi thì bỏ qua
-            if (auction.getStatus() != AuctionStatus.OPEN) return;
+            if (auction.getStatus() != AuctionStatus.OPEN) {
+                System.out.println("[Settlement] Auction " + auctionId + " đã CLOSED, bỏ qua.");
+                return;
+            }
 
-            // 1. Đóng auction
+            // 1. Đóng auction ngay — ngăn luồng khác vào sau khi release lock
             auctionService.closeAuction(auctionId);
 
             // 2. Tìm winner
             Bid highestBid = bidService.getHighestBid(auctionId);
 
-            int      winnerId      = -1;
-            String   winnerAccount = null;
-            BigDecimal winningPrice = auction.getCurrentPrice();
+            int        winnerId         = -1;
+            String     winnerAccount    = null;
+            BigDecimal winningPrice     = auction.getCurrentPrice();
+            BigDecimal winnerNewBalance = null; // balance mới của winner sau khi bị trừ
 
             if (highestBid != null) {
                 winnerId = highestBid.getBidderId();
@@ -77,38 +116,57 @@ public class SettlementHandler {
                 if (winner != null) {
                     winnerAccount = winner.getAccount();
 
-                    // 3. Trừ balance
-                    BigDecimal balance    = winner.getBalance() != null ? winner.getBalance() : BigDecimal.ZERO;
-                    BigDecimal newBalance = balance.subtract(highestBid.getAmount());
-                    if (newBalance.compareTo(BigDecimal.ZERO) < 0) newBalance = BigDecimal.ZERO;
-                    winner.setBalance(newBalance);
-                    userService.updateUser(winner);
-
-                    System.out.println("[Settlement] Trừ " + highestBid.getAmount()
-                            + " từ " + winnerAccount
-                            + " → balance còn: " + newBalance);
+                    // 3. Trừ balance bằng UPDATE trực tiếp (atomic, tránh race condition)
+                    // Dùng GREATEST(balance - amount, 0) để tránh balance âm.
+                    boolean balanceUpdated = updateBalanceDirect(conn, winnerId, highestBid.getAmount());
+                    if (balanceUpdated) {
+                        // Reload user sau khi update để có balance mới nhất
+                        winner = userService.getUserById(winnerId);
+                        System.out.println("[Settlement] Trừ " + highestBid.getAmount()
+                                + " từ " + winnerAccount
+                                + " → balance còn: " + (winner != null ? winner.getBalance() : "?"));
+                    } else {
+                        // Fallback: update qua object
+                        BigDecimal bal = winner.getBalance() != null ? winner.getBalance() : BigDecimal.ZERO;
+                        BigDecimal newBal = bal.subtract(highestBid.getAmount());
+                        if (newBal.compareTo(BigDecimal.ZERO) < 0) newBal = BigDecimal.ZERO;
+                        winner.setBalance(newBal);
+                        userService.updateUser(winner);
+                        System.out.println("[Settlement] Trừ (fallback) " + highestBid.getAmount()
+                                + " từ " + winnerAccount + " → balance còn: " + newBal);
+                    }
                 }
 
+                // Lưu lại balance mới nhất của winner để gửi về client
+                winnerNewBalance = (winner != null) ? winner.getBalance() : BigDecimal.ZERO;
                 winningPrice = highestBid.getAmount();
 
-                // 4. Mark bid WINNER
+                // 4a. Mark tất cả bid ACTIVE → OUTBID
+                bidService.markAllOutbid(auctionId);
+                // 4b. Mark riêng bid thắng là WINNER
                 bidService.updateBidStatus(highestBid.getId(), BidStatus.WINNER);
             }
 
             // 5. Broadcast AUCTION_SETTLED
-            final int      fWinnerId  = winnerId;
-            final String   fAccount   = winnerAccount;
-            final BigDecimal fPrice   = winningPrice;
+            final int        fWinnerId     = winnerId;
+            final String     fAccount      = winnerAccount;
+            final BigDecimal fPrice        = winningPrice;
+            final BigDecimal fNewBalance   = winnerNewBalance;
 
-            for (java.util.Map.Entry<String, ClientHandler> entry : clients.entrySet()) {
-                String sid = entry.getKey();
+            for (Map.Entry<String, ClientHandler> entry : clients.entrySet()) {
                 ClientHandler ch = entry.getValue();
 
-                User sessionUser = ServerSessionManager.getInstance().getUser(sid);
+                String loginSid = ch.getLoginSessionId();
+                User sessionUser = loginSid != null
+                        ? ServerSessionManager.getInstance().getUser(loginSid)
+                        : null;
+
                 AuctionSettledResponse resp = new AuctionSettledResponse(
-                        sid, auctionId, fWinnerId, fAccount, fPrice);
+                        loginSid, auctionId, fWinnerId, fAccount, fPrice);
                 if (sessionUser != null && sessionUser.getId() == fWinnerId) {
                     resp.setIsWinner(true);
+                    // Gửi balance mới về cho winner để client cập nhật SessionManager
+                    resp.setNewBalance(fNewBalance);
                 }
                 ch.send(gson.toJson(resp));
             }
@@ -120,6 +178,8 @@ public class SettlementHandler {
         } catch (Exception e) {
             System.err.println("[Settlement] Lỗi settle auction " + auctionId + ": " + e.getMessage());
             e.printStackTrace();
+        } finally {
+            lock.unlock();
         }
     }
 }

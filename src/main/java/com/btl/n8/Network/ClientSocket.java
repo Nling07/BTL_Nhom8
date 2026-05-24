@@ -25,7 +25,6 @@ public class ClientSocket {
             .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
             .create();
 
-    // CopyOnWriteArrayList — thread-safe khi iterate
     private final List<ServerResponseListener> listeners = new CopyOnWriteArrayList<>();
 
     private ClientSocket() {}
@@ -41,12 +40,10 @@ public class ClientSocket {
         return instance;
     }
 
-    // Lazy connect — gọi khi cần
     public boolean connect() {
         if (connected) return true;
         try {
             socket = new Socket();
-            // Timeout 3 giây thay vì chờ mãi
             socket.connect(new java.net.InetSocketAddress(SERVER_IP, SERVER_PORT), 3000);
             in        = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             out       = new PrintWriter(socket.getOutputStream(), true);
@@ -60,8 +57,23 @@ public class ClientSocket {
             return false;
         }
     }
+
     public boolean isConnected() {
         return connected && socket != null && !socket.isClosed();
+    }
+
+    /**
+     * Reset socket về trạng thái ban đầu — giữ nguyên listeners.
+     * Gọi khi server restart hoặc kết nối bị chết.
+     */
+    public void reset() {
+        try {
+            if (socket != null && !socket.isClosed()) socket.close();
+        } catch (IOException ignored) {}
+        socket    = null;
+        in        = null;
+        out       = null;
+        connected = false;
     }
 
     public void addListener(ServerResponseListener listener) {
@@ -84,7 +96,9 @@ public class ClientSocket {
                 }
             } catch (IOException e) {
                 System.out.println("Mất kết nối server!");
-                connected = false;
+            } finally {
+                // Tự reset khi socket chết → lần login tiếp theo connect lại được
+                reset();
             }
         });
         t.setDaemon(true);

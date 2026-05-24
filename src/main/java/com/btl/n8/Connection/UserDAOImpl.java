@@ -122,18 +122,25 @@ public class UserDAOImpl implements UserDAO {
 
             if (ps.executeUpdate() > 0) {
                 if (user instanceof Bidder bidder) {
-                    String sql2 = "UPDATE bidders SET balance = ? WHERE user_id = ?";
+                    // UPSERT: tạo row nếu chưa có (an toàn hơn UPDATE đơn thuần)
+                    String sql2 = """
+                        INSERT INTO bidders(user_id, balance) VALUES(?, ?)
+                        ON DUPLICATE KEY UPDATE balance = VALUES(balance)
+                        """;
                     try (PreparedStatement ps2 = conn.prepareStatement(sql2)) {
-                        ps2.setBigDecimal(1, bidder.getBalance());
-                        ps2.setInt(2, user.getId());
+                        ps2.setInt(1, user.getId());
+                        ps2.setBigDecimal(2, bidder.getBalance() != null ? bidder.getBalance() : java.math.BigDecimal.ZERO);
                         ps2.executeUpdate();
                     }
-                } else if (user instanceof Seller && user.getBalance() != null) {
-                    // Seller cũng lưu balance qua bảng bidders (row vẫn tồn tại sau upgradeToSeller)
-                    String sql2 = "UPDATE bidders SET balance = ? WHERE user_id = ?";
+                } else if (user.getBalance() != null) {
+                    // Seller (hoặc role khác) — cũng dùng UPSERT vào bidders
+                    String sql2 = """
+                        INSERT INTO bidders(user_id, balance) VALUES(?, ?)
+                        ON DUPLICATE KEY UPDATE balance = VALUES(balance)
+                        """;
                     try (PreparedStatement ps2 = conn.prepareStatement(sql2)) {
-                        ps2.setBigDecimal(1, user.getBalance());
-                        ps2.setInt(2, user.getId());
+                        ps2.setInt(1, user.getId());
+                        ps2.setBigDecimal(2, user.getBalance());
                         ps2.executeUpdate();
                     }
                 }

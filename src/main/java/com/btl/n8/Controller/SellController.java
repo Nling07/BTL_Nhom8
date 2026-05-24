@@ -20,8 +20,7 @@ import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
-import javafx.scene.control.cell.PropertyValueFactory;
-import javafx.stage.FileChooser;
+import javafx.scene.control.cell.PropertyValueFactory;import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
 import java.io.File;
@@ -36,6 +35,8 @@ public class SellController {
     @FXML private TextField nameField;
     @FXML private ComboBox<String> typeCombo;
     @FXML private TextField priceField;
+    @FXML private Spinner<Integer> hoursSpinner;
+    @FXML private Spinner<Integer> minutesSpinner;
     @FXML private Label uploadLabel;
     @FXML private Label messageLabel;
 
@@ -81,6 +82,17 @@ public class SellController {
 
         sellerId = user.getId();
         typeCombo.setItems(FXCollections.observableArrayList("POSTER", "FIGURE", "CARD"));
+
+        // Hours: 0–48, mặc định 1
+        hoursSpinner.setValueFactory(
+                new javafx.scene.control.SpinnerValueFactory.IntegerSpinnerValueFactory(0, 48, 1));
+        hoursSpinner.setEditable(true);
+
+        // Minutes: 0 hoặc 30, mặc định 0
+        minutesSpinner.setValueFactory(
+                new javafx.scene.control.SpinnerValueFactory.ListSpinnerValueFactory<>(
+                        javafx.collections.FXCollections.observableArrayList(0, 30)));
+        minutesSpinner.setEditable(false);
 
         colId.setCellValueFactory(new PropertyValueFactory<>("id"));
         colName.setCellValueFactory(new PropertyValueFactory<>("name"));
@@ -187,6 +199,31 @@ public class SellController {
         Button submitBtn = (Button) event.getSource();
         submitBtn.setDisable(true);
 
+        // Đọc và validate thời gian đấu giá
+        int hours, minutes;
+        try {
+            // commitEdit() để đảm bảo giá trị đã nhập được áp dụng
+            hoursSpinner.commitValue();
+            hours   = hoursSpinner.getValue();
+            minutes = minutesSpinner.getValue();
+        } catch (Exception e) {
+            showError("Invalid duration values");
+            return;
+        }
+
+        int totalMinutes = hours * 60 + minutes;
+        if (totalMinutes < 30) {
+            showError("Duration must be at least 30 minutes");
+            return;
+        }
+        if (totalMinutes > 48 * 60) {
+            showError("Duration cannot exceed 48 hours (2 days)");
+            return;
+        }
+
+        final int finalHours   = hours;
+        final int finalMinutes = minutes;
+
         new Thread(() -> {
             try {
                 byte[] imageBytes = FileUtils.toByteArray(selectedImage);
@@ -209,7 +246,7 @@ public class SellController {
                 }
 
                 LocalDateTime startTime = LocalDateTime.now();
-                LocalDateTime endTime   = startTime.plusDays(2);
+                LocalDateTime endTime   = startTime.plusHours(finalHours).plusMinutes(finalMinutes);
 
                 Auction auction = new Auction(
                         0, item.getId(),
