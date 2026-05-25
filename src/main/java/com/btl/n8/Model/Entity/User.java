@@ -9,9 +9,11 @@ public abstract class User extends Entity {
     protected String password;
     protected Role role;
     protected BigDecimal balance;
+    protected BigDecimal frozenBalance; // tiền đang bị khóa do đang đấu giá
 
     public User(){
         super();
+        this.frozenBalance = BigDecimal.ZERO;
     }
 
     public User(int id, String account, String password, Role role){
@@ -19,6 +21,7 @@ public abstract class User extends Entity {
         this.account = account;
         this.password = password;
         this.role = role;
+        this.frozenBalance = BigDecimal.ZERO;
     }
 
     public User(int id, String account, String password, Role role, BigDecimal balance){
@@ -27,39 +30,48 @@ public abstract class User extends Entity {
         this.password = password;
         this.role = role;
         this.balance = balance;
+        this.frozenBalance = BigDecimal.ZERO;
+    }
+
+    public User(int id, String account, String password, Role role, BigDecimal balance, BigDecimal frozenBalance){
+        super(id);
+        this.account = account;
+        this.password = password;
+        this.role = role;
+        this.balance = balance;
+        this.frozenBalance = frozenBalance != null ? frozenBalance : BigDecimal.ZERO;
     }
 
     public User(String account, String password, Role role){
         this.account = account;
         this.password = password;
         this.role = role;
+        this.frozenBalance = BigDecimal.ZERO;
     }
 
-    // Setter
-    public void setAccount(String account){
-        this.account = account;
-    }
-    public void setPassword(String password){
-        this.password = password;
-    }
-    public void setRole(Role role){
-        this.role = role;
-    }
-    public void setBalance(BigDecimal balance){
-        this.balance = balance;
+    // ── Getters ───────────────────────────────────────────────────────────────
+
+    public String getAccount()             { return account; }
+    public String getPassword()            { return password; }
+    public Role getRole()                  { return role; }
+    public BigDecimal getBalance()         { return balance; }
+    public BigDecimal getFrozenBalance()   { return frozenBalance != null ? frozenBalance : BigDecimal.ZERO; }
+
+    /**
+     * Số dư thực sự có thể dùng = balance - frozenBalance.
+     * Dùng cái này để check khi đặt giá mới.
+     */
+    public BigDecimal getAvailableBalance() {
+        BigDecimal bal    = balance != null ? balance : BigDecimal.ZERO;
+        BigDecimal frozen = frozenBalance != null ? frozenBalance : BigDecimal.ZERO;
+        return bal.subtract(frozen).max(BigDecimal.ZERO);
     }
 
+    // ── Setters ───────────────────────────────────────────────────────────────
 
-    // Getter
-    public String getAccount(){
-        return account;
-    }
-    public String getPassword(){
-        return password;
-    }
-    public Role getRole(){
-        return role;
-    }
-    public BigDecimal getBalance(){return balance;}
-
+    public void setAccount(String account)               { this.account = account; }
+    public void setPassword(String password)             { this.password = password; }
+    public void setRole(Role role)                       { this.role = role; }
+    public void setBalance(BigDecimal balance)           { this.balance = balance; }
+    public void setFrozenBalance(BigDecimal frozen)      { this.frozenBalance = frozen != null ? frozen : BigDecimal.ZERO; }
 }

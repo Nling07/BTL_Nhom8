@@ -13,42 +13,36 @@ import java.sql.SQLException;
 public class UserMapper {
     public static User map(ResultSet rs) throws SQLException {
 
-        int id = rs.getInt("user_id");
-        String account = rs.getString("account");
+        int    id       = rs.getInt("user_id");
+        String account  = rs.getString("account");
         String password = rs.getString("password");
-
-        Role role = Role.valueOf(rs.getString("role"));
+        Role   role     = Role.valueOf(rs.getString("role"));
 
         switch (role) {
 
-            case BIDDER:
-
+            case BIDDER -> {
                 BigDecimal balance = rs.getBigDecimal("balance");
+                BigDecimal frozen  = rs.getBigDecimal("frozen_balance");
+                Bidder bidder = new Bidder(id, account, password, balance);
+                bidder.setFrozenBalance(frozen);
+                return bidder;
+            }
 
-                return new Bidder(
-                        id,
-                        account,
-                        password,
-                        balance
-                );
-
-            case SELLER:
-                // Seller vẫn giữ balance từ bảng bidders (vì upgradeToSeller không xóa bidder row)
-                BigDecimal sellerBalance = rs.getBigDecimal("balance");
+            case SELLER -> {
+                // Seller vẫn giữ balance từ bảng bidders
+                BigDecimal balance = rs.getBigDecimal("balance");
+                BigDecimal frozen  = rs.getBigDecimal("frozen_balance");
                 Seller seller = new Seller(id, account, password);
-                seller.setBalance(sellerBalance);
+                seller.setBalance(balance);
+                seller.setFrozenBalance(frozen);
                 return seller;
+            }
 
-            case ADMIN:
+            case ADMIN -> {
+                return new Admin(id, account, password);
+            }
 
-                return new Admin(
-                        id,
-                        account,
-                        password
-                );
-
-            default:
-                throw new IllegalArgumentException("Invalid role");
+            default -> throw new IllegalArgumentException("Invalid role: " + role);
         }
     }
 }

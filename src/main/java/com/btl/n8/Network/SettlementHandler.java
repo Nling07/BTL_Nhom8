@@ -7,9 +7,7 @@ import com.btl.n8.Model.Entity.Bid;
 import com.btl.n8.Model.Entity.User;
 import com.btl.n8.Model.Enums.AuctionStatus;
 import com.btl.n8.Model.Enums.BidStatus;
-import com.btl.n8.Service.AuctionService;
-import com.btl.n8.Service.BidService;
-import com.btl.n8.Service.UserService;
+import com.btl.n8.Service.*;
 import com.btl.n8.Util.LocalDateTimeAdapter;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -17,25 +15,26 @@ import com.google.gson.GsonBuilder;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * Xử lý việc kết thúc phiên đấu giá:
+ * Xử lý kết thúc phiên đấu giá:
  *   1. Đóng auction (OPEN → CLOSED)
- *   2. Xác định winner (bid cao nhất)
- *   3. Trừ balance của winner
- *   4. Mark OUTBID tất cả bid còn lại, rồi mark bid cao nhất là WINNER
+ *   2. Xác định winner = bid WINNER trong bảng bids (bid cao nhất)
+ *   3. settleWinner: trừ balance thật + giải phóng frozen (atomic 1 SQL)
+ *   4. Unfreeze cho tất cả người không thắng
  *   5. Broadcast AUCTION_SETTLED tới tất cả client
  *
- * Tách khỏi RequestHandler để Server1 scheduler có thể tái dùng.
+ * Dependency Injection: dùng ServiceFactory thay vì tự new DAO.
+ * Thread-safe: per-auction ReentrantLock + idempotent guard.
  */
 public class SettlementHandler {
 
     private final ConcurrentHashMap<String, ClientHandler> clients;
 
-    // FIX: per-auction lock để tránh double-settle khi scheduler và handleBid() cùng trigger
     private static final ConcurrentHashMap<Integer, ReentrantLock> settleLocks =
             new ConcurrentHashMap<>();
 
@@ -47,35 +46,13 @@ public class SettlementHandler {
         this.clients = clients;
     }
 
-    /**
-     * Trừ balance bằng UPDATE SQL trực tiếp — atomic, không cần load object trước.
-     * Áp dụng cho cả Bidder lẫn Seller-upgrader (cùng dùng bảng bidders).
-     * Dùng GREATEST(..., 0) để tránh balance âm.
-     */
-    private boolean updateBalanceDirect(Connection conn, int userId, BigDecimal amount) {
-        String sql = "UPDATE bidders SET balance = GREATEST(balance - ?, 0) WHERE user_id = ?";
-        try (java.sql.PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setBigDecimal(1, amount);
-            ps.setInt(2, userId);
-            return ps.executeUpdate() > 0;
-        } catch (java.sql.SQLException e) {
-            System.err.println("[Settlement] updateBalanceDirect lỗi: " + e.getMessage());
-            return false;
-        }
-    }
-
     private ReentrantLock getSettleLock(int auctionId) {
         return settleLocks.computeIfAbsent(auctionId, id -> new ReentrantLock(true));
     }
 
-    /**
-     * Settle auction. Idempotent + thread-safe:
-     * chỉ một luồng được settle tại một thời điểm nhờ per-auction ReentrantLock.
-     */
     public void settleAuction(int auctionId) {
         ReentrantLock lock = getSettleLock(auctionId);
 
-        // Không block nếu luồng khác đang settle auction này
         if (!lock.tryLock()) {
             System.out.println("[Settlement] Auction " + auctionId + " đang được settle bởi luồng khác, bỏ qua.");
             return;
@@ -85,77 +62,75 @@ public class SettlementHandler {
             Connection conn = DataConnection.getConnection();
             if (conn == null) return;
 
-            AuctionService auctionService = new AuctionService(new AuctionDAOImpl(conn));
-            BidService     bidService     = new BidService(new BidDAOImpl(conn));
-            UserService    userService    = new UserService(new UserDAOImpl(conn));
+            // Dùng ServiceFactory — không còn new DAOImpl trực tiếp
+            AuctionService auctionService = ServiceFactory.createAuctionService(conn);
+            BidService     bidService     = ServiceFactory.createBidService(conn);
+            UserService    userService    = ServiceFactory.createUserService(conn);
 
             Auction auction = auctionService.getAuctionById(auctionId);
             if (auction == null) return;
 
-            // Idempotent guard: đã settled rồi thì bỏ qua
+            // Idempotent: đã settled thì bỏ qua
             if (auction.getStatus() != AuctionStatus.OPEN) {
                 System.out.println("[Settlement] Auction " + auctionId + " đã CLOSED, bỏ qua.");
                 return;
             }
 
-            // 1. Đóng auction ngay — ngăn luồng khác vào sau khi release lock
+            // 1. Đóng auction
             auctionService.closeAuction(auctionId);
 
-            // 2. Tìm winner
+            // 2. Xác định winner = bid cao nhất (findHighestBid)
+            //    → mark bid đó là WINNER trong bảng bids
+            //    → các bid còn lại mark OUTBID
             Bid highestBid = bidService.getHighestBid(auctionId);
 
-            int        winnerId         = -1;
-            String     winnerAccount    = null;
-            BigDecimal winningPrice     = auction.getCurrentPrice();
-            BigDecimal winnerNewBalance = null; // balance mới của winner sau khi bị trừ
+            int        winnerId      = -1;
+            String     winnerAccount = null;
+            BigDecimal winningPrice  = auction.getCurrentPrice();
+            BigDecimal winnerNewBal  = null;
 
             if (highestBid != null) {
                 winnerId = highestBid.getBidderId();
+
+                // Mark tất cả bid ACTIVE → OUTBID trước
+                bidService.markAllOutbid(auctionId);
+                // Mark riêng bid thắng là WINNER
+                bidService.updateBidStatus(highestBid.getId(), BidStatus.WINNER);
 
                 User winner = userService.getUserById(winnerId);
                 if (winner != null) {
                     winnerAccount = winner.getAccount();
 
-                    // 3. Trừ balance bằng UPDATE trực tiếp (atomic, tránh race condition)
-                    // Dùng GREATEST(balance - amount, 0) để tránh balance âm.
-                    boolean balanceUpdated = updateBalanceDirect(conn, winnerId, highestBid.getAmount());
-                    if (balanceUpdated) {
-                        // Reload user sau khi update để có balance mới nhất
-                        winner = userService.getUserById(winnerId);
-                        System.out.println("[Settlement] Trừ " + highestBid.getAmount()
-                                + " từ " + winnerAccount
+                    // 3. settleWinner: atomic — trừ balance thật + giải phóng frozen 1 lần
+                    boolean settled = userService.settleWinner(winnerId, highestBid.getAmount());
+                    if (settled) {
+                        winner = userService.getUserById(winnerId); // reload balance mới
+                        System.out.println("[Settlement] settleWinner " + winnerAccount
+                                + ": trừ " + highestBid.getAmount()
                                 + " → balance còn: " + (winner != null ? winner.getBalance() : "?"));
                     } else {
-                        // Fallback: update qua object
-                        BigDecimal bal = winner.getBalance() != null ? winner.getBalance() : BigDecimal.ZERO;
-                        BigDecimal newBal = bal.subtract(highestBid.getAmount());
-                        if (newBal.compareTo(BigDecimal.ZERO) < 0) newBal = BigDecimal.ZERO;
-                        winner.setBalance(newBal);
-                        userService.updateUser(winner);
-                        System.out.println("[Settlement] Trừ (fallback) " + highestBid.getAmount()
-                                + " từ " + winnerAccount + " → balance còn: " + newBal);
+                        System.err.println("[Settlement] settleWinner thất bại cho user " + winnerId);
                     }
                 }
 
-                // Lưu lại balance mới nhất của winner để gửi về client
-                winnerNewBalance = (winner != null) ? winner.getBalance() : BigDecimal.ZERO;
+                winnerNewBal = (winner != null) ? winner.getBalance() : BigDecimal.ZERO;
                 winningPrice = highestBid.getAmount();
 
-                // 4a. Mark tất cả bid ACTIVE → OUTBID
-                bidService.markAllOutbid(auctionId);
-                // 4b. Mark riêng bid thắng là WINNER
-                bidService.updateBidStatus(highestBid.getId(), BidStatus.WINNER);
+                // 4. Unfreeze cho tất cả người không thắng
+                unfreezeNonWinners(auctionId, winnerId, bidService, userService);
+            } else {
+                // Không có bid nào → unfreeze tất cả (trường hợp lý thuyết, bảo vệ data)
+                unfreezeNonWinners(auctionId, -1, bidService, userService);
             }
 
             // 5. Broadcast AUCTION_SETTLED
-            final int        fWinnerId     = winnerId;
-            final String     fAccount      = winnerAccount;
-            final BigDecimal fPrice        = winningPrice;
-            final BigDecimal fNewBalance   = winnerNewBalance;
+            final int        fWinnerId    = winnerId;
+            final String     fAccount     = winnerAccount;
+            final BigDecimal fPrice       = winningPrice;
+            final BigDecimal fNewBalance  = winnerNewBal;
 
             for (Map.Entry<String, ClientHandler> entry : clients.entrySet()) {
                 ClientHandler ch = entry.getValue();
-
                 String loginSid = ch.getLoginSessionId();
                 User sessionUser = loginSid != null
                         ? ServerSessionManager.getInstance().getUser(loginSid)
@@ -165,7 +140,6 @@ public class SettlementHandler {
                         loginSid, auctionId, fWinnerId, fAccount, fPrice);
                 if (sessionUser != null && sessionUser.getId() == fWinnerId) {
                     resp.setIsWinner(true);
-                    // Gửi balance mới về cho winner để client cập nhật SessionManager
                     resp.setNewBalance(fNewBalance);
                 }
                 ch.send(gson.toJson(resp));
@@ -180,6 +154,31 @@ public class SettlementHandler {
             e.printStackTrace();
         } finally {
             lock.unlock();
+        }
+    }
+
+    /**
+     * Unfreeze balance cho tất cả bidder không thắng trong auction.
+     * Mỗi bidder: tìm bid cao nhất của họ (= số tiền đang bị frozen) rồi unfreeze.
+     */
+    private void unfreezeNonWinners(int auctionId, int winnerId,
+                                    BidService bidService, UserService userService) {
+        List<Bid> allBids = bidService.getBidsByAuction(auctionId);
+
+        // Map bidderId → bid amount cao nhất của người đó (= tiền đang frozen)
+        java.util.Map<Integer, BigDecimal> frozenPerBidder = new java.util.HashMap<>();
+        for (Bid b : allBids) {
+            if (b.getBidderId() == winnerId) continue; // winner đã settleWinner rồi
+            frozenPerBidder.merge(b.getBidderId(), b.getAmount(),
+                    (old, nw) -> old.compareTo(nw) >= 0 ? old : nw);
+        }
+
+        for (Map.Entry<Integer, BigDecimal> entry : frozenPerBidder.entrySet()) {
+            boolean ok = userService.unfreezeBalance(entry.getKey(), entry.getValue());
+            if (ok) {
+                System.out.println("[Settlement] Unfreeze " + entry.getValue()
+                        + " cho bidder " + entry.getKey());
+            }
         }
     }
 }

@@ -12,9 +12,7 @@ import java.util.List;
 public class BidDAOImpl implements BidDAO {
     private final Connection conn;
 
-    public BidDAOImpl(Connection conn) {
-        this.conn = conn;
-    }
+    public BidDAOImpl(Connection conn) { this.conn = conn; }
 
     @Override
     public boolean insert(Bid bid) {
@@ -22,14 +20,12 @@ public class BidDAOImpl implements BidDAO {
             INSERT INTO bids(auction_id, bidder_id, amount, bid_time, status)
             VALUES (?, ?, ?, ?, ?)
         """;
-
         try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setInt(1, bid.getAuctionId());
             ps.setInt(2, bid.getBidderId());
             ps.setBigDecimal(3, bid.getAmount());
             ps.setTimestamp(4, Timestamp.valueOf(bid.getBidTime()));
             ps.setString(5, bid.getStatus().name());
-
             int rows = ps.executeUpdate();
             if (rows > 0) {
                 try (ResultSet rs = ps.getGeneratedKeys()) {
@@ -48,8 +44,7 @@ public class BidDAOImpl implements BidDAO {
     @Override
     public List<Bid> findByAuction(int auctionId) {
         List<Bid> list = new ArrayList<>();
-        String sql = "SELECT * FROM bids WHERE auction_id = ? ORDER BY bid_time ASC";
-
+        String sql = "SELECT * FROM bids WHERE auction_id = ? ORDER BY amount DESC, bid_time ASC";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, auctionId);
             try (ResultSet rs = ps.executeQuery()) {
@@ -65,7 +60,6 @@ public class BidDAOImpl implements BidDAO {
     public List<Bid> findByBidder(int bidderId) {
         List<Bid> list = new ArrayList<>();
         String sql = "SELECT * FROM bids WHERE bidder_id = ? ORDER BY bid_time DESC";
-
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, bidderId);
             try (ResultSet rs = ps.executeQuery()) {
@@ -82,10 +76,9 @@ public class BidDAOImpl implements BidDAO {
         String sql = """
             SELECT * FROM bids
             WHERE auction_id = ?
-            ORDER BY amount DESC
+            ORDER BY amount DESC, bid_time ASC
             LIMIT 1
         """;
-
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, auctionId);
             try (ResultSet rs = ps.executeQuery()) {
@@ -97,10 +90,33 @@ public class BidDAOImpl implements BidDAO {
         return null;
     }
 
+    /**
+     * Lấy bid ACTIVE (đang dẫn đầu) của 1 bidder trong 1 auction.
+     * Một bidder chỉ có tối đa 1 bid ACTIVE tại 1 thời điểm.
+     */
+    @Override
+    public Bid findActiveBidByBidder(int auctionId, int bidderId) {
+        String sql = """
+            SELECT * FROM bids
+            WHERE auction_id = ? AND bidder_id = ? AND status = 'ACTIVE'
+            ORDER BY bid_time DESC
+            LIMIT 1
+        """;
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, auctionId);
+            ps.setInt(2, bidderId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) return mapBid(rs);
+            }
+        } catch (SQLException e) {
+            System.out.println("Lỗi SQL khi findActiveBidByBidder: " + e.getMessage());
+        }
+        return null;
+    }
+
     @Override
     public boolean updateStatus(int bidId, BidStatus status) {
         String sql = "UPDATE bids SET status = ? WHERE bid_id = ?";
-
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, status.name());
             ps.setInt(2, bidId);
@@ -118,7 +134,6 @@ public class BidDAOImpl implements BidDAO {
             SET status = 'OUTBID'
             WHERE auction_id = ? AND status = 'ACTIVE'
         """;
-
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, auctionId);
             ps.executeUpdate();
@@ -132,7 +147,6 @@ public class BidDAOImpl implements BidDAO {
     @Override
     public boolean deleteById(int id) {
         String sql = "DELETE FROM bids WHERE bid_id = ?";
-
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, id);
             return ps.executeUpdate() > 0;
@@ -143,12 +157,13 @@ public class BidDAOImpl implements BidDAO {
     }
 
     private Bid mapBid(ResultSet rs) throws SQLException {
-        int id        = rs.getInt("bid_id");
-        int auctionId = rs.getInt("auction_id");
-        int bidderId  = rs.getInt("bidder_id");
-        BigDecimal amount   = rs.getBigDecimal("amount");
-        LocalDateTime time  = rs.getTimestamp("bid_time").toLocalDateTime();
-        BidStatus status    = BidStatus.valueOf(rs.getString("status"));
-        return new Bid(id, auctionId, bidderId, amount, time, status);
+        return new Bid(
+                rs.getInt("bid_id"),
+                rs.getInt("auction_id"),
+                rs.getInt("bidder_id"),
+                rs.getBigDecimal("amount"),
+                rs.getTimestamp("bid_time").toLocalDateTime(),
+                BidStatus.valueOf(rs.getString("status"))
+        );
     }
 }
