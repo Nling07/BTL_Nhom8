@@ -36,4 +36,11 @@ public interface UserDAO {
      * Dùng GREATEST để tránh âm.
      */
     boolean settleWinner(int userId, BigDecimal amount);
+
+    /**
+     * [FIX] Cộng tiền vào balance của seller sau khi auction kết thúc có người thắng.
+     * Seller được lưu trong bảng bidders (vì seller vừa bán vừa có thể bid).
+     * Nếu seller chưa có dòng trong bidders → INSERT với balance = amount.
+     */
+    boolean creditSeller(int sellerId, BigDecimal amount);
 }

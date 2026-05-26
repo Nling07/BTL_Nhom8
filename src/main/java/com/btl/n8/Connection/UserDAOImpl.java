@@ -299,6 +299,29 @@ public class UserDAOImpl implements UserDAO {
         return false;
     }
 
+    /**
+     * [FIX] Cộng tiền vào balance của seller sau khi auction kết thúc.
+     * Seller được lưu chung trong bảng bidders (join qua user_id).
+     * Nếu seller chưa có dòng trong bidders (chưa từng bid) → INSERT với balance = amount.
+     * Nếu đã có → UPDATE cộng thêm vào balance.
+     */
+    @Override
+    public boolean creditSeller(int sellerId, BigDecimal amount) {
+        String sql = """
+            INSERT INTO bidders(user_id, balance, frozen_balance)
+            VALUES (?, ?, 0)
+            ON DUPLICATE KEY UPDATE balance = balance + VALUES(balance)
+            """;
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, sellerId);
+            ps.setBigDecimal(2, amount);
+            return ps.executeUpdate() > 0;
+        } catch (SQLException e) {
+            System.out.println("Lỗi SQL khi creditSeller: " + e.getMessage());
+        }
+        return false;
+    }
+
     // ── private helpers ───────────────────────────────────────────────────────
 
     private boolean insertUser(User user) {

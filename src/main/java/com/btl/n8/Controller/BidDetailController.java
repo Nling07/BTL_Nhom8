@@ -173,7 +173,6 @@ public class BidDetailController implements ServerResponseListener {
             }
             case "STOPPED" -> {
                 setAutoBidButtonDefault();
-                // Hiện lý do dừng ra màn hình chính để user biết
                 showMsg("🤖 " + (msg.isEmpty() ? "AutoBid đã dừng." : msg), false);
             }
         }
@@ -232,7 +231,6 @@ public class BidDetailController implements ServerResponseListener {
             XYChart.Series<String, Number> series = new XYChart.Series<>();
             series.setName("Price");
             DateTimeFormatter fmt = DateTimeFormatter.ofPattern("HH:mm:ss");
-            // FIX: duyệt thuận chiều (bid_time ASC từ DB) — không đảo ngược
             for (Bid bid : bids) {
                 series.getData().add(new XYChart.Data<>(bid.getBidTime().format(fmt), bid.getAmount()));
             }
@@ -285,13 +283,19 @@ public class BidDetailController implements ServerResponseListener {
                     return;
                 }
 
-                // Kiểm tra balance phía client (nhanh, tránh gửi bid không cần thiết)
+                // [FIX] Kiểm tra balance phía client dùng getAvailableBalance() thay vì getBalance()
+                // getAvailableBalance() = balance - frozenBalance (tiền đang bị khóa ở các auction khác)
+                // Điều này khớp với logic kiểm tra phía server, tránh false-positive "đủ tiền"
+                // rồi server từ chối và client bị confused trạng thái.
                 com.btl.n8.Model.Entity.User me = SessionManager.getInstance().getCurrentUser();
-                java.math.BigDecimal myBalance = (me != null && me.getBalance() != null)
-                        ? me.getBalance() : java.math.BigDecimal.ZERO;
-                if (amount.compareTo(myBalance) > 0) {
-                    showMsg(String.format("Số dư không đủ! Balance: %s — Cần: %s",
-                            fmt(myBalance), fmt(amount)), false);
+                java.math.BigDecimal available = (me != null)
+                        ? me.getAvailableBalance()
+                        : java.math.BigDecimal.ZERO;
+                if (amount.compareTo(available) > 0) {
+                    java.math.BigDecimal frozen = (me != null) ? me.getFrozenBalance() : BigDecimal.ZERO;
+                    showMsg(String.format(
+                            "Số dư khả dụng không đủ! Khả dụng: %s (đang khóa: %s) — Cần: %s",
+                            fmt(available), fmt(frozen), fmt(amount)), false);
                     return;
                 }
 
@@ -332,16 +336,17 @@ public class BidDetailController implements ServerResponseListener {
                 }
 
                 // Cập nhật balance trong SessionManager:
-                // - Nếu thắng: server gửi newBalance mới → dùng luôn, không cần query DB
-                // - Nếu thua: balance không thay đổi, không cần làm gì
+                // - Nếu thắng: server gửi newBalance mới → dùng luôn
+                // - Nếu thua: reload từ DB để cập nhật frozenBalance đã được unfreeze
                 if (settled.isWinner() && settled.getNewBalance() != null) {
                     com.btl.n8.Model.Entity.User me = SessionManager.getInstance().getCurrentUser();
                     if (me != null) {
                         me.setBalance(settled.getNewBalance());
+                        me.setFrozenBalance(BigDecimal.ZERO); // frozen đã được giải phóng
                         SessionManager.getInstance().setCurrentUser(me);
                     }
-                } else if (!settled.isWinner()) {
-                    // Reload user từ DB trên background thread (không block UI)
+                } else {
+                    // Reload user từ DB trên background thread (cập nhật frozen đã được unfreeze)
                     new Thread(() -> {
                         try {
                             com.btl.n8.Model.Entity.User updated =
@@ -528,7 +533,6 @@ public class BidDetailController implements ServerResponseListener {
     @FXML
     public void handleClose() {
         cleanup();
-        // FIX: dùng closeBtn để lấy Stage (nhất quán với fx:id trong FXML)
         Stage stage = (Stage) closeBtn.getScene().getWindow();
         stage.close();
     }

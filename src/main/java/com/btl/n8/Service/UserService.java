@@ -88,4 +88,12 @@ public class UserService {
     public boolean settleWinner(int userId, BigDecimal amount) {
         return userDAO.settleWinner(userId, amount);
     }
+
+    /**
+     * [FIX] Cộng tiền bán hàng vào balance của seller.
+     * Được gọi từ SettlementHandler sau khi auction kết thúc có người thắng.
+     */
+    public boolean creditSeller(int sellerId, BigDecimal amount) {
+        return userDAO.creditSeller(sellerId, amount);
+    }
 }

@@ -16,16 +16,9 @@ import java.math.BigDecimal;
 import java.sql.Connection;
 import java.time.LocalDateTime;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import com.btl.n8.Util.LocalDateTimeAdapter;
 
-/**
- * Xử lý tất cả request từ client.
- *
- * Dependency Injection: không tự new DAO nữa — dùng ServiceFactory.
- * Frozen Balance: freeze trước khi bid, unfreeze người bị outbid, settle khi thắng.
- * Concurrent Bid: lock per-auctionId ở BidService đảm bảo chỉ 1 thread xử lý
- *   1 auction tại 1 thời điểm → tránh 2 người cùng thắng với cùng 1 giá.
- */
 public class RequestHandler {
 
     private final ClientHandler clientHandler;
@@ -38,7 +31,11 @@ public class RequestHandler {
     private static final int SNIPE_WINDOW_SECONDS    = 30;
     private static final int SNIPE_EXTENSION_SECONDS = 30;
 
-    // Inject qua ServiceFactory — không còn tự new DAO trực tiếp
+    // FIX concurrent: lock per-auctionId dùng chung toàn server (static)
+    // Đảm bảo chỉ 1 request bid vào 1 auction tại 1 thời điểm
+    private static final ConcurrentHashMap<Integer, ReentrantLock> bidLocks =
+            new ConcurrentHashMap<>();
+
     private final AuctionService auctionService;
     private final UserService    userService;
     private final BidService     bidService;
@@ -57,8 +54,7 @@ public class RequestHandler {
         ItemService    tmpItem    = null;
 
         try {
-            tmpConn   = DataConnection.getConnection();
-            // Dùng ServiceFactory thay vì new trực tiếp
+            tmpConn    = DataConnection.getConnection();
             tmpUser    = ServiceFactory.createUserService(tmpConn);
             tmpBid     = ServiceFactory.createBidService(tmpConn);
             tmpItem    = ServiceFactory.createItemService(tmpConn);
@@ -72,6 +68,10 @@ public class RequestHandler {
         this.bidService     = tmpBid;
         this.itemService    = tmpItem;
         this.auctionService = tmpAuction;
+    }
+
+    private ReentrantLock getBidLock(int auctionId) {
+        return bidLocks.computeIfAbsent(auctionId, id -> new ReentrantLock(true));
     }
 
     // ── LOGIN ─────────────────────────────────────────────────────────────────
@@ -108,6 +108,22 @@ public class RequestHandler {
     public void handleBid(BidRequest req) {
         String sessionId = req.getSessionId();
 
+        // FIX concurrent: lock theo auctionId trước khi làm bất cứ thứ gì
+        // → 2 người bid cùng auction phải xếp hàng, không chạy song song
+        ReentrantLock lock = getBidLock(req.getAuctionId());
+        lock.lock();
+        try {
+            _handleBidLocked(req, sessionId);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Xử lý bid sau khi đã giữ lock của auction.
+     * Tách ra method riêng cho dễ đọc.
+     */
+    private void _handleBidLocked(BidRequest req, String sessionId) {
         try {
             // Luôn lấy user mới nhất từ DB để balance/frozenBalance chính xác
             User sessionUser = ServerSessionManager.getInstance().getUser(sessionId);
@@ -120,9 +136,12 @@ public class RequestHandler {
             int        auctionId = req.getAuctionId();
             BigDecimal amount    = req.getAmount();
 
+            // Fetch auction mới nhất — QUAN TRỌNG: phải fetch SAU khi giữ lock
+            // để đọc currentPrice chính xác (người trước có thể vừa cập nhật)
             Auction auction = auctionService.getAuctionById(auctionId);
             if (auction == null) throw new InvalidBidException("Auction không tồn tại");
 
+            // FIX anti-sniping: lấy now SAU khi giữ lock để tính secondsLeft chính xác
             LocalDateTime now = LocalDateTime.now();
 
             if (now.isAfter(auction.getEndTime())) {
@@ -144,7 +163,6 @@ public class RequestHandler {
 
             // ── Frozen balance check ──────────────────────────────────────────
             // Dùng getAvailableBalance() = balance - frozenBalance
-            // thay vì getBalance() để tránh double-spend khi đấu giá nhiều item
             BigDecimal available = user.getAvailableBalance();
             if (amount.compareTo(available) > 0) {
                 Auction cur = auctionService.getAuctionById(auctionId);
@@ -160,9 +178,9 @@ public class RequestHandler {
                 return;
             }
 
-            // ── FREEZE trước khi bid ──────────────────────────────────────────
-            // Atomic tại DB: chỉ freeze nếu available >= amount (tránh race condition
-            // khi 2 request đến cùng lúc với cùng user)
+            // ── FREEZE trước khi vào transaction ─────────────────────────────
+            // Vì đã có lock auction-level bên ngoài, user cùng lúc bid 2 auction khác nhau
+            // vẫn cần atomic freeze tại DB để tránh race condition ở tầng DB
             boolean frozen = userService.freezeBalance(user.getId(), amount);
             if (!frozen) {
                 Auction cur = auctionService.getAuctionById(auctionId);
@@ -176,13 +194,12 @@ public class RequestHandler {
 
             // ── Transaction: updatePrice + markOutbid + insertBid ─────────────
             boolean success = false;
-            Bid previousActiveBid = null; // bid cũ ACTIVE của user này (nếu có) — để unfreeze
+            Bid previousActiveBid = null;
 
             try {
                 conn.setAutoCommit(false);
 
-                // Tìm bid ACTIVE hiện tại của chính user này trong auction này
-                // để sau này unfreeze đúng số tiền
+                // Lấy bid ACTIVE cũ của chính user này trong auction (nếu đang tự nâng giá)
                 previousActiveBid = bidService.getActiveBidByBidder(auctionId, user.getId());
 
                 // 1. Cập nhật current_price
@@ -190,7 +207,6 @@ public class RequestHandler {
                         .updateCurrentPrice(auctionId, amount);
                 if (!auctionUpdated) {
                     conn.rollback();
-                    // Hoàn lại frozen vừa lock
                     userService.unfreezeBalance(user.getId(), amount);
                     throw new AuctionClosedException("Đặt giá thất bại — phiên có thể đã kết thúc", auctionId);
                 }
@@ -199,7 +215,7 @@ public class RequestHandler {
                 bidService.markAllOutbid(auctionId);
 
                 // 3. Insert bid mới
-                com.btl.n8.Model.Entity.Bid newBid = new com.btl.n8.Model.Entity.Bid();
+                Bid newBid = new Bid();
                 newBid.setAuctionId(auctionId);
                 newBid.setBidderId(user.getId());
                 newBid.setAmount(amount);
@@ -226,20 +242,20 @@ public class RequestHandler {
 
             if (!success) return;
 
-            // ── Unfreeze tiền của những người bị outbid ──────────────────────
-            // Broadcast danh sách bidder bị outbid để server unfreeze cho họ.
-            // Ta query bids vừa bị mark OUTBID trong cùng auction này (trừ chính user hiện tại).
-            // Đơn giản nhất: unfreeze previousActiveBid của chính user (nếu user nâng giá chính mình)
+            // ── Unfreeze sau khi transaction commit thành công ────────────────
+
+            // Nếu user đang tự nâng giá của mình → unfreeze bid cũ
+            // (vì đã freeze toàn bộ amount mới, phần cũ không cần giữ nữa)
             if (previousActiveBid != null) {
-                // User này đang nâng giá từ oldAmount lên amount → chỉ freeze thêm diff,
-                // nhưng ta đã freeze toàn bộ amount → cần unfreeze phần cũ
                 userService.unfreezeBalance(user.getId(), previousActiveBid.getAmount());
             }
 
-            // Unfreeze cho tất cả bidder khác vừa bị outbid trong auction này
-            unfreezeOutbidders(auctionId, user.getId(), bidService);
+            // Unfreeze cho tất cả bidder khác vừa bị outbid
+            bidService.unfreezeOutbidBalances(auctionId, user.getId(), userService);
 
             // ── Anti-sniping ──────────────────────────────────────────────────
+            // FIX: fetch lại auction SAU transaction để có endTime chính xác
+            // rồi tính secondsLeft từ now (đã lấy sau lock) → không bị lệch
             Auction updated = auctionService.getAuctionById(auctionId);
             LocalDateTime newEndTime = null;
             long secondsLeft = java.time.Duration.between(now, updated.getEndTime()).getSeconds();
@@ -280,34 +296,6 @@ public class RequestHandler {
                     false, req.getAuctionId(),
                     cur != null ? cur.getCurrentPrice() : BigDecimal.ZERO,
                     null, -1));
-        }
-    }
-
-    /**
-     * Unfreeze cho tất cả bidder bị outbid (trừ chính người vừa bid).
-     * Gọi sau khi transaction commit thành công.
-     */
-    private void unfreezeOutbidders(int auctionId, int currentBidderId, BidService bidService) {
-        // Lấy danh sách bid OUTBID vừa bị mark — query bid cũ ACTIVE của người khác
-        // Đơn giản: lấy tất cả bid OUTBID của auction, trừ của currentBidder
-        // Mỗi bid OUTBID → unfreeze đúng amount của bid đó cho bidder đó
-        try {
-            java.util.List<com.btl.n8.Model.Entity.Bid> outbidList =
-                    bidService.getBidsByAuction(auctionId);
-            for (com.btl.n8.Model.Entity.Bid b : outbidList) {
-                if (b.getBidderId() == currentBidderId) continue;
-                if (b.getStatus() == com.btl.n8.Model.Enums.BidStatus.OUTBID) {
-                    // Chỉ unfreeze bid OUTBID vừa mới (status mới đổi)
-                    // Để tránh unfreeze nhiều lần, chỉ unfreeze bid OUTBID trong lần này
-                    // thực tế nên thêm flag "frozen_released" nhưng để đơn giản cho BTL:
-                    // chỉ unfreeze bid cao nhất của mỗi bidder (bid gần nhất)
-                }
-            }
-            // Cách đơn giản hơn cho BTL: unfreeze bid active vừa bị outbid của từng người
-            // Gọi thẳng unfreezeForOutbid trong BidService
-            bidService.unfreezeOutbidBalances(auctionId, currentBidderId, userService);
-        } catch (Exception e) {
-            System.err.println("[RequestHandler] Lỗi unfreeze outbidders: " + e.getMessage());
         }
     }
 
@@ -362,8 +350,6 @@ public class RequestHandler {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private void send(Object obj)         { clientHandler.send(gson.toJson(obj)); }
-    private void broadcastAll(String json) {
-        for (ClientHandler c : clients.values()) c.send(json);
-    }
+    private void send(Object obj)          { clientHandler.send(gson.toJson(obj)); }
+    private void broadcastAll(String json) { for (ClientHandler c : clients.values()) c.send(json); }
 }
