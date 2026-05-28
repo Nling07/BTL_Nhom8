@@ -19,7 +19,7 @@ public class ClientSocket {
     private PrintWriter out;
     private boolean connected = false;
 
-    private static final String SERVER_IP   = "26.5.122.2";
+    private static final String SERVER_IP   = "localhost";
     private static final int    SERVER_PORT = 9090;
     private static final Gson gson = new GsonBuilder()
             .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
