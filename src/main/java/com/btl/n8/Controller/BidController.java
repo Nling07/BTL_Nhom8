@@ -7,8 +7,11 @@ import com.btl.n8.Service.ItemService;
 import com.btl.n8.DTO.BidResponse;
 import com.btl.n8.Network.ClientSocket;
 import com.btl.n8.Network.ServerResponseListener;
+import com.btl.n8.Util.LocalDateTimeAdapter;
 import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
+import java.time.LocalDateTime;
 
 import javafx.application.Platform;
 import javafx.beans.property.SimpleStringProperty;
@@ -46,7 +49,9 @@ public class BidController implements ServerResponseListener {
     private ItemService       itemService;
     private AuctionService    auctionService;
     private AuctionDAOImpl    auctionDAOImpl;   // FIX: giữ ref để gọi closeExpiredAuctions
-    private static final Gson gson = new Gson();
+    private static final Gson gson = new GsonBuilder()
+            .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
+            .create();
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 

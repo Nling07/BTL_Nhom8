@@ -9,8 +9,11 @@ import com.btl.n8.DTO.LoginRequest;
 import com.btl.n8.DTO.LoginResponse;
 import com.btl.n8.Network.ClientSocket;
 import com.btl.n8.Network.ServerResponseListener;
+import com.btl.n8.Util.LocalDateTimeAdapter;
 import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
+import java.time.LocalDateTime;
 
 import javafx.application.Platform;
 import javafx.event.ActionEvent;
@@ -32,7 +35,9 @@ public class LoginController implements ServerResponseListener {
     @FXML private PasswordField passwordField;
     @FXML private Label messageLabel;
 
-    private static final Gson gson = new Gson();
+    private static final Gson gson = new GsonBuilder()
+            .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
+            .create();
     private ActionEvent lastEvent;
 
     @FXML

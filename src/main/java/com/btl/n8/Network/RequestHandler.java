@@ -108,12 +108,19 @@ public class RequestHandler {
     public void handleBid(BidRequest req) {
         String sessionId = req.getSessionId();
 
-        // FIX concurrent: lock theo auctionId trước khi làm bất cứ thứ gì
-        // → 2 người bid cùng auction phải xếp hàng, không chạy song song
         ReentrantLock lock = getBidLock(req.getAuctionId());
         lock.lock();
         try {
             _handleBidLocked(req, sessionId);
+        } catch (Exception e) {
+            // Bắt mọi exception không mong đợi (SQLException từ broken connection, v.v.)
+            // để tránh crash ClientHandler → client bị mất kết nối
+            System.err.println("[BID ERROR] Unexpected exception: " + e.getClass().getName() + ": " + e.getMessage());
+            e.printStackTrace();
+            try {
+                send(new BidResponse("Lỗi hệ thống, vui lòng thử lại",
+                        sessionId, false, req.getAuctionId(), BigDecimal.ZERO, null, -1));
+            } catch (Exception ignored) {}
         } finally {
             lock.unlock();
         }
@@ -132,6 +139,18 @@ public class RequestHandler {
             User user = userService.getUserById(sessionUser.getId());
             if (user == null) throw new AuthenticationException("Không tìm thấy user");
             ServerSessionManager.getInstance().refreshUser(sessionId, user);
+
+            // ═══════════════════════════════════════════════════════
+            // [DEBUG] In trạng thái user + request ngay khi vào bid
+            System.out.println("\n[DEBUG-BID] ══════════════════════════════════");
+            System.out.println("[DEBUG-BID] user      = " + user.getAccount() + " (id=" + user.getId() + ")");
+            System.out.println("[DEBUG-BID] auctionId = " + req.getAuctionId());
+            System.out.println("[DEBUG-BID] amount    = " + req.getAmount());
+            System.out.println("[DEBUG-BID] balance        = " + user.getBalance());
+            System.out.println("[DEBUG-BID] frozenBalance  = " + user.getFrozenBalance());
+            System.out.println("[DEBUG-BID] availableBalance = " + user.getAvailableBalance());
+
+            // ═══════════════════════════════════════════════════════
 
             int        auctionId = req.getAuctionId();
             BigDecimal amount    = req.getAmount();
@@ -178,10 +197,36 @@ public class RequestHandler {
                 return;
             }
 
-            // ── FREEZE trước khi vào transaction ─────────────────────────────
-            // Vì đã có lock auction-level bên ngoài, user cùng lúc bid 2 auction khác nhau
-            // vẫn cần atomic freeze tại DB để tránh race condition ở tầng DB
-            boolean frozen = userService.freezeBalance(user.getId(), amount);
+            // ── FREEZE: chỉ freeze phần CHÊNH LỆCH so với bid cũ ───────────
+            // Nếu user đang là highest bidder auction này và muốn nâng giá,
+            // phần cũ đã bị frozen rồi → chỉ cần freeze thêm phần chênh lệch.
+            // Tránh trường hợp: balance=200, frozen=100(bidX), bid thêm 120 cho itemY
+            // → available=100, đủ 120? Không. Đúng.
+            // Nhưng nếu nâng giá itemX từ 100→150: available=100, cần 150? Sai!
+            // Thực tế chỉ cần freeze thêm 50 (=150-100).
+            Bid existingBidInThisAuction = bidService.getActiveBidByBidder(auctionId, user.getId());
+            BigDecimal alreadyFrozenForThis = existingBidInThisAuction != null
+                    ? existingBidInThisAuction.getAmount() : BigDecimal.ZERO;
+            BigDecimal extraToFreeze = amount.subtract(alreadyFrozenForThis);
+
+            // Kiểm tra available có đủ để freeze thêm không
+            if (extraToFreeze.compareTo(BigDecimal.ZERO) > 0
+                    && extraToFreeze.compareTo(user.getAvailableBalance()) > 0) {
+                Auction cur = auctionService.getAuctionById(auctionId);
+                send(new BidResponse(
+                        "Số dư khả dụng không đủ! Khả dụng: "
+                                + String.format("%,.0f ₫", user.getAvailableBalance())
+                                + " — Cần thêm: " + String.format("%,.0f ₫", extraToFreeze),
+                        sessionId, false, auctionId,
+                        cur != null ? cur.getCurrentPrice() : BigDecimal.ZERO,
+                        null, -1));
+                return;
+            }
+
+            boolean frozen = true;
+            if (extraToFreeze.compareTo(BigDecimal.ZERO) > 0) {
+                frozen = userService.freezeBalance(user.getId(), extraToFreeze);
+            }
             if (!frozen) {
                 Auction cur = auctionService.getAuctionById(auctionId);
                 send(new BidResponse(
@@ -197,14 +242,18 @@ public class RequestHandler {
             Bid previousActiveBid = null;
 
             try {
+                System.out.println("[DEBUG-TXN] setAutoCommit(false)");
                 conn.setAutoCommit(false);
 
                 // Lấy bid ACTIVE cũ của chính user này trong auction (nếu đang tự nâng giá)
                 previousActiveBid = bidService.getActiveBidByBidder(auctionId, user.getId());
+                System.out.println("[DEBUG-TXN] previousActiveBid = "
+                        + (previousActiveBid != null ? previousActiveBid.getAmount() : "NONE"));
 
                 // 1. Cập nhật current_price
                 boolean auctionUpdated = auctionService.getAuctionDAO()
                         .updateCurrentPrice(auctionId, amount);
+                System.out.println("[DEBUG-TXN] updateCurrentPrice → " + auctionUpdated);
                 if (!auctionUpdated) {
                     conn.rollback();
                     userService.unfreezeBalance(user.getId(), amount);
@@ -213,6 +262,7 @@ public class RequestHandler {
 
                 // 2. Mark tất cả bid cũ là OUTBID
                 bidService.markAllOutbid(auctionId);
+                System.out.println("[DEBUG-TXN] markAllOutbid done");
 
                 // 3. Insert bid mới
                 Bid newBid = new Bid();
@@ -223,6 +273,7 @@ public class RequestHandler {
                 newBid.setStatus(com.btl.n8.Model.Enums.BidStatus.ACTIVE);
 
                 boolean bidSaved = bidService.insertBid(newBid);
+                System.out.println("[DEBUG-TXN] insertBid → " + bidSaved);
                 if (!bidSaved) {
                     conn.rollback();
                     userService.unfreezeBalance(user.getId(), amount);
@@ -230,27 +281,28 @@ public class RequestHandler {
                 }
 
                 conn.commit();
+                System.out.println("[DEBUG-TXN] commit OK");
                 success = true;
 
             } catch (java.sql.SQLException e) {
+                System.err.println("[DEBUG-TXN] *** SQLException trong transaction: " + e.getMessage());
+                System.err.println("[DEBUG-TXN] SQLState=" + e.getSQLState() + " ErrorCode=" + e.getErrorCode());
                 try { conn.rollback(); } catch (java.sql.SQLException ignored) {}
                 userService.unfreezeBalance(user.getId(), amount);
                 throw new InvalidBidException("Lỗi DB khi đặt giá: " + e.getMessage());
             } finally {
-                try { conn.setAutoCommit(true); } catch (java.sql.SQLException ignored) {}
+                try {
+                    conn.setAutoCommit(true);
+                } catch (java.sql.SQLException e) {
+                    System.err.println("[DEBUG-TXN] *** setAutoCommit(true) THẤT BẠI: " + e.getMessage());
+                }
             }
 
             if (!success) return;
 
             // ── Unfreeze sau khi transaction commit thành công ────────────────
-
-            // Nếu user đang tự nâng giá của mình → unfreeze bid cũ
-            // (vì đã freeze toàn bộ amount mới, phần cũ không cần giữ nữa)
-            if (previousActiveBid != null) {
-                userService.unfreezeBalance(user.getId(), previousActiveBid.getAmount());
-            }
-
-            // Unfreeze cho tất cả bidder khác vừa bị outbid
+            // Không cần unfreeze previousActiveBid vì đã chỉ freeze phần chênh lệch ở trên.
+            // Unfreeze cho tất cả bidder khác vừa bị outbid.
             bidService.unfreezeOutbidBalances(auctionId, user.getId(), userService);
 
             // ── Anti-sniping ──────────────────────────────────────────────────
