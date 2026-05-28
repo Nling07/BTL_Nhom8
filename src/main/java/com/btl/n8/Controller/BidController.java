@@ -179,12 +179,14 @@ public class BidController implements ServerResponseListener {
         if (!res.isSuccess()) return;
 
         Platform.runLater(() -> {
-            for (ItemRow row : allItems) {
+            for (int i = 0; i < allItems.size(); i++) {
+                ItemRow row = allItems.get(i);
                 if (row.getAuctionId() == res.getAuctionId()) {
                     row.setPrice(String.format("%,.0f ₫", res.getCurrentPrice()));
                     row.setStatus("OPEN");
-                    // Ép TableView refresh row bằng cách refresh toàn bộ
-                    itemTable.refresh();
+                    // Dùng set(i, row) để fire ListChangeListener trên ObservableList
+                    // → TableView tự re-render row đó mà không cần refresh() toàn bộ
+                    allItems.set(i, row);
                     break;
                 }
             }

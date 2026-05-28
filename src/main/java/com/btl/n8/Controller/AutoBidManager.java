@@ -101,11 +101,17 @@ public class AutoBidManager implements ServerResponseListener {
             ClientSocket.getInstance().addListener(this);
         }
 
-        // Chỉ bid ngay nếu mình CHƯA dẫn đầu auction.
-        // Kiểm tra: nếu auction != null và currentPrice < maxPrice thì thử bid.
-        // isLeading = false theo mặc định → checkAndBid sẽ bid 1 lần để giành dẫn đầu.
-        // Nếu mình đang dẫn đầu rồi (ví dụ vừa bid tay trước khi bật AutoBid),
-        // server sẽ trả về lỗi "giá phải cao hơn" → AutoBid dừng yên chờ người khác vượt.
+        // Khi activate, chỉ bid ngay nếu currentPrice + step <= maxPrice.
+        // Nếu không thể bid cao hơn nữa thì dừng luôn, không cần gửi lên server.
+        if (auction != null) {
+            BigDecimal nextBid = auction.getCurrentPrice().add(step);
+            if (nextBid.compareTo(maxPrice) > 0 && maxPrice.compareTo(auction.getCurrentPrice()) <= 0) {
+                // maxPrice không vượt được currentPrice → AutoBid vô nghĩa
+                notifyUI(auctionId, "STOPPED:Max price thấp hơn giá hiện tại – AutoBid không thể chạy.");
+                cancelSilent(auctionId);
+                return;
+            }
+        }
         checkAndBid(session);
     }
 
@@ -147,10 +153,18 @@ public class AutoBidManager implements ServerResponseListener {
 
         BidResponse res = gson.fromJson(response, BidResponse.class);
         if (!res.isSuccess()) {
-            // Server từ chối bid — reset isLeading để có thể thử lại nếu cần
+            // Server từ chối bid → reset isLeading về false.
+            // QUAN TRỌNG: khi reject, server trả bidderId = -1 (không phải id thật)
+            // → không thể dùng bidderId để filter, phải dùng auctionId.
             AutoBidSession s = sessions.get(res.getAuctionId());
-            if (s != null && s.bidderId == res.getBidderId()) {
+            if (s != null) {
                 s.isLeading = false;
+                // Cập nhật currentPrice từ response (server luôn gửi kèm giá hiện tại)
+                if (s.auction != null && res.getCurrentPrice() != null) {
+                    s.auction.setCurrentPrice(res.getCurrentPrice());
+                }
+                // KHÔNG retry tự động khi bị reject — tránh spam server.
+                // AutoBid sẽ phản ứng lại khi CÓ người khác bid (BID_UPDATE success).
             }
             return;
         }
