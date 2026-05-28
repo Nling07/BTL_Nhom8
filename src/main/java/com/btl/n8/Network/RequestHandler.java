@@ -403,5 +403,8 @@ public class RequestHandler {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private void send(Object obj)          { clientHandler.send(gson.toJson(obj)); }
-    private void broadcastAll(String json) { for (ClientHandler c : clients.values()) c.send(json); }
+    private void broadcastAll(String json) {
+        System.out.println("[BROADCAST] tới " + clients.size() + " clients: " + json.substring(0, Math.min(80, json.length())));
+        for (ClientHandler c : clients.values()) c.send(json);
+    }
 }

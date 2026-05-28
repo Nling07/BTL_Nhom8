@@ -45,7 +45,7 @@ public class ClientHandler implements Runnable {
         this.requestHandler = new RequestHandler(this, clients);
     }
 
-    public void send(String json) {
+    public synchronized void send(String json) {
         out.println(json);
     }
 
