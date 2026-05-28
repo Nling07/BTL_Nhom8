@@ -3,17 +3,11 @@ package com.btl.n8.Controller;
 import com.btl.n8.Connection.DataConnection;
 import com.btl.n8.Connection.UserDAO;
 import com.btl.n8.Connection.UserDAOImpl;
-import com.btl.n8.DTO.AuctionSettledResponse;
+import com.btl.n8.Model.Entity.Bidder;
 import com.btl.n8.Model.Entity.User;
 import com.btl.n8.Model.Enums.Role;
-import com.btl.n8.Network.ClientSocket;
-import com.btl.n8.Network.ServerResponseListener;
-import com.btl.n8.Util.LocalDateTimeAdapter;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonObject;
 
-import javafx.application.Platform;
+import com.btl.n8.Network.ClientSocket;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
@@ -29,19 +23,12 @@ import javafx.stage.Stage;
 
 import java.math.BigDecimal;
 import java.sql.Connection;
-import java.time.LocalDateTime;
 import java.util.Optional;
 
-// FIX: implement ServerResponseListener để nhận AUCTION_SETTLED
-// → refresh balance realtime khi phiên đấu giá kết thúc
-public class HomeController implements ServerResponseListener {
+public class HomeController {
 
     @FXML private Label balanceLabel;
     @FXML private Button becomeSellerBtn;
-
-    private static final Gson gson = new GsonBuilder()
-            .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
-            .create();
 
     @FXML
     public void initialize() {
@@ -49,100 +36,31 @@ public class HomeController implements ServerResponseListener {
             System.out.println("Warning: User not logged in");
             return;
         }
-
-        // FIX: reload balance từ DB mỗi lần vào Home
-        // Đảm bảo hiển thị đúng sau settlement, nạp tiền từ màn hình khác, v.v.
-        reloadBalanceFromDB();
+        refreshBalance();
         updateBecomeSellerVisibility();
-
-        // FIX: lắng nghe socket để cập nhật balance realtime khi có AUCTION_SETTLED
-        ClientSocket.getInstance().addListener(this);
     }
 
-    // ── FIX: ServerResponseListener ──────────────────────────────────────────
-
-    /**
-     * Nhận AUCTION_SETTLED từ server.
-     * Nếu user hiện tại là winner hoặc seller → reload balance từ DB.
-     * (Server đã trừ tiền winner và cộng tiền seller trước khi broadcast)
-     */
-    @Override
-    public void onRespone(JsonObject response) {
-        if (!response.has("action")) return;
-        if (!"AUCTION_SETTLED".equals(response.get("action").getAsString())) return;
-
-        AuctionSettledResponse settled =
-                gson.fromJson(response, AuctionSettledResponse.class);
-
-        User me = SessionManager.getInstance().getCurrentUser();
-        if (me == null) return;
-
-        // Reload balance nếu:
-        //   - Mình là winner (balance bị trừ)
-        //   - Mình là seller của auction (balance được cộng) — không biết sellerId ở đây
-        //     nên cứ reload cho chắc (1 query nhẹ, không ảnh hưởng hiệu năng)
-        reloadBalanceFromDB();
-    }
-
-    // ── Balance helpers ───────────────────────────────────────────────────────
-
-    /**
-     * Reload user mới nhất từ DB → cập nhật SessionManager → refresh label.
-     * Chạy trên background thread để không block UI.
-     */
-    private void reloadBalanceFromDB() {
-        User me = SessionManager.getInstance().getCurrentUser();
-        if (me == null) return;
-
-        new Thread(() -> {
-            try {
-                Connection conn = DataConnection.getConnection();
-                if (conn == null) return;
-
-                User fresh = new UserDAOImpl(conn).findById(me.getId());
-                if (fresh != null) {
-                    Platform.runLater(() -> {
-                        SessionManager.getInstance().setCurrentUser(fresh);
-                        refreshBalanceLabel(fresh);
-                    });
-                }
-            } catch (Exception e) {
-                System.err.println("[HomeController] Lỗi reload balance: " + e.getMessage());
-                // Fallback: hiển thị giá trị cũ từ session
-                Platform.runLater(() -> refreshBalanceLabel(me));
-            }
-        }).start();
-    }
-
-    private void refreshBalanceLabel(User user) {
+    private void refreshBalance() {
+        User user = SessionManager.getInstance().getCurrentUser();
         if (balanceLabel == null || user == null) return;
         BigDecimal bal = user.getBalance() != null ? user.getBalance() : BigDecimal.ZERO;
         balanceLabel.setText(String.format("%,.0f", bal));
     }
 
-    // Giữ lại method cũ để tương thích nội bộ (dùng object trong session)
-    private void refreshBalance() {
-        refreshBalanceLabel(SessionManager.getInstance().getCurrentUser());
-    }
-
     private void updateBecomeSellerVisibility() {
         User user = SessionManager.getInstance().getCurrentUser();
         if (becomeSellerBtn != null) {
+            // Chỉ hiện nút nếu user là BIDDER
             becomeSellerBtn.setVisible(user != null && user.getRole() == Role.BIDDER);
         }
     }
-
-    private void cleanup() {
-        ClientSocket.getInstance().removeListener(this);
-    }
-
-    // ── FXML handlers ─────────────────────────────────────────────────────────
 
     @FXML
     public void deposit(ActionEvent event) {
         User user = SessionManager.getInstance().getCurrentUser();
         if (user == null) return;
 
+        // Cả BIDDER và SELLER đều được nạp tiền
         if (user.getRole() != Role.BIDDER && user.getRole() != Role.SELLER) {
             showAlert(Alert.AlertType.WARNING, "Thông báo", "Admin không thể nạp tiền.");
             return;
@@ -162,8 +80,7 @@ public class HomeController implements ServerResponseListener {
                     return;
                 }
 
-                // Cộng tiền vào object hiện tại (optimistic update)
-                BigDecimal current    = user.getBalance() != null ? user.getBalance() : BigDecimal.ZERO;
+                BigDecimal current = user.getBalance() != null ? user.getBalance() : BigDecimal.ZERO;
                 BigDecimal newBalance = current.add(amount);
                 user.setBalance(newBalance);
 
@@ -173,9 +90,7 @@ public class HomeController implements ServerResponseListener {
                     new UserDAOImpl(conn).update(user);
                 }
 
-                // Reload từ DB để lấy giá trị chính xác
-                reloadBalanceFromDB();
-
+                refreshBalance();
                 showAlert(Alert.AlertType.INFORMATION, "Thành công",
                         String.format("Nạp thành công %,.0f ₫\nSố dư hiện tại: %,.0f ₫", amount, newBalance));
 
@@ -215,6 +130,7 @@ public class HomeController implements ServerResponseListener {
                 boolean success = userDAO.upgradeToSeller(user.getId());
 
                 if (success) {
+                    // Cập nhật session với user mới từ DB
                     User updatedUser = userDAO.findById(user.getId());
                     SessionManager.getInstance().setCurrentUser(updatedUser);
 
@@ -233,7 +149,6 @@ public class HomeController implements ServerResponseListener {
 
     public void Bid(ActionEvent event) throws Exception {
         if (!SessionManager.getInstance().isLoggedIn()) return;
-        cleanup();
         Parent root = FXMLLoader.load(getClass().getResource("/fxml/bid.fxml"));
         Stage stage = (Stage)((Node)event.getSource()).getScene().getWindow();
         stage.setScene(new Scene(root));
@@ -242,7 +157,6 @@ public class HomeController implements ServerResponseListener {
 
     public void Sell(ActionEvent event) throws Exception {
         if (!SessionManager.getInstance().isLoggedIn()) return;
-        cleanup();
         Parent root = FXMLLoader.load(getClass().getResource("/fxml/sell.fxml"));
         Stage stage = (Stage)((Node)event.getSource()).getScene().getWindow();
         stage.setScene(new Scene(root));
@@ -264,14 +178,13 @@ public class HomeController implements ServerResponseListener {
     }
 
     public void logout(ActionEvent event) throws Exception {
-        cleanup();
         AutoBidManager.getInstance().cancelAll();
         SessionManager.getInstance().logout();
         SessionManager.getInstance().setCurrentUser(null);
         SessionManager.getInstance().setSessionId(null);
         ClientSocket.getInstance().close();
         ClientSocket.getInstance().reset();
-
+        
         Parent root = FXMLLoader.load(getClass().getResource("/fxml/login.fxml"));
         Stage stage = (Stage)((Node)event.getSource()).getScene().getWindow();
         stage.setScene(new Scene(root));
