@@ -5,6 +5,7 @@ import com.btl.n8.Model.Entity.Card;
 import com.btl.n8.Model.Entity.Figure;
 import com.btl.n8.Model.Entity.Item;
 import com.btl.n8.Model.Entity.Poster;
+import com.btl.n8.Model.Enums.ItemType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -15,7 +16,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
