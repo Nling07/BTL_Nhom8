@@ -1,14 +1,17 @@
 package com.btl.n8.Controller;
 
-import com.btl.n8.Connection.*;
-import com.btl.n8.Model.Entity.Auction;
-import com.btl.n8.Model.Entity.Item;
+import com.btl.n8.DTO.AddItemRequest;
+import com.btl.n8.DTO.AddItemResponse;
 import com.btl.n8.Model.Entity.User;
-import com.btl.n8.Model.Enums.AuctionStatus;
+import com.btl.n8.Model.Enums.ItemType;
 import com.btl.n8.Model.Enums.Role;
-import com.btl.n8.Service.AuctionService;
+import com.btl.n8.Network.ClientSocket;
+import com.btl.n8.Network.ServerResponseListener;
 import com.btl.n8.Util.FileUtils;
-import com.btl.n8.Service.ItemService;
+import com.btl.n8.Util.LocalDateTimeAdapter;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonObject;
 
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
@@ -20,154 +23,125 @@ import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
-import javafx.scene.control.cell.PropertyValueFactory;import javafx.stage.FileChooser;
+import javafx.scene.control.cell.PropertyValueFactory;
+import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 
 import java.io.File;
 import java.math.BigDecimal;
-import java.sql.Connection;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Base64;
 
-public class SellController {
+public class SellController implements ServerResponseListener {
 
-    @FXML private TextField nameField;
-    @FXML private ComboBox<String> typeCombo;
-    @FXML private TextField priceField;
-    @FXML private Spinner<Integer> hoursSpinner;
-    @FXML private Spinner<Integer> minutesSpinner;
-    @FXML private Label uploadLabel;
-    @FXML private Label messageLabel;
+    @FXML private TextField          nameField;
+    @FXML private ComboBox<String>   typeCombo;
+    @FXML private TextField          priceField;
+    @FXML private Spinner<Integer>   hoursSpinner;
+    @FXML private Spinner<Integer>   minutesSpinner;
+    @FXML private Label              uploadLabel;
+    @FXML private Label              messageLabel;
 
-    @FXML private TableView<SellRow> myItemTable;
-    @FXML private TableColumn<SellRow, Integer> colId;
-    @FXML private TableColumn<SellRow, String>  colName;
-    @FXML private TableColumn<SellRow, String>  colType;
-    @FXML private TableColumn<SellRow, String>  colStartPrice;
-    @FXML private TableColumn<SellRow, String>  colCurrentPrice;
-    @FXML private TableColumn<SellRow, String>  colStatus;
+    @FXML private TableView<SellRow>              myItemTable;
+    @FXML private TableColumn<SellRow, Integer>   colId;
+    @FXML private TableColumn<SellRow, String>    colName;
+    @FXML private TableColumn<SellRow, String>    colType;
+    @FXML private TableColumn<SellRow, String>    colStartPrice;
+    @FXML private TableColumn<SellRow, String>    colCurrentPrice;
+    @FXML private TableColumn<SellRow, String>    colStatus;
 
     private File selectedImage;
-    private ObservableList<SellRow> myItems = FXCollections.observableArrayList();
-    private int sellerId;
+    private Button submitBtn;
+    private final ObservableList<SellRow> myItems = FXCollections.observableArrayList();
 
-    private ItemService itemService;
-    private AuctionService auctionService;
+    private static final Gson gson = new GsonBuilder()
+            .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
+            .create();
 
     @FXML
     public void initialize() {
         User user = SessionManager.getInstance().getCurrentUser();
 
-        // Chặn người không phải SELLER
         if (user == null || user.getRole() != Role.SELLER) {
-            javafx.application.Platform.runLater(() -> {
+            Platform.runLater(() -> {
                 Alert alert = new Alert(Alert.AlertType.WARNING);
                 alert.setTitle("Không có quyền");
                 alert.setHeaderText(null);
-                alert.setContentText("Chỉ Seller mới có thể đăng bán sản phẩm.\nHãy nâng cấp tài khoản tại trang Home.");
+                alert.setContentText("Chỉ Seller mới có thể đăng bán sản phẩm.\n"
+                        + "Hãy nâng cấp tài khoản tại trang Home.");
                 alert.showAndWait();
-                // Trở về Home
                 try {
                     Parent root = FXMLLoader.load(getClass().getResource("/fxml/home.fxml"));
                     Stage stage = (Stage) nameField.getScene().getWindow();
                     stage.setScene(new Scene(root));
                     stage.show();
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
+                } catch (Exception e) { e.printStackTrace(); }
             });
             return;
         }
 
-        sellerId = user.getId();
         typeCombo.setItems(FXCollections.observableArrayList("POSTER", "FIGURE", "CARD"));
 
-        // Hours: 0–48, mặc định 1
         hoursSpinner.setValueFactory(
-                new javafx.scene.control.SpinnerValueFactory.IntegerSpinnerValueFactory(0, 48, 1));
+                new javafx.scene.control.SpinnerValueFactory
+                        .IntegerSpinnerValueFactory(0, 48, 1));
         hoursSpinner.setEditable(true);
 
-        // Minutes: 0–59, mặc định 0
         minutesSpinner.setValueFactory(
-                new javafx.scene.control.SpinnerValueFactory.IntegerSpinnerValueFactory(0, 59, 0));
-        minutesSpinner.setEditable(true);
+                new javafx.scene.control.SpinnerValueFactory
+                        .ListSpinnerValueFactory<>(
+                        javafx.collections.FXCollections.observableArrayList(0, 30)));
+        minutesSpinner.setEditable(false);
 
-        colId.setCellValueFactory(new PropertyValueFactory<>("id"));
-        colName.setCellValueFactory(new PropertyValueFactory<>("name"));
-        colType.setCellValueFactory(new PropertyValueFactory<>("type"));
-        colStartPrice.setCellValueFactory(new PropertyValueFactory<>("startPrice"));
+        colId          .setCellValueFactory(new PropertyValueFactory<>("id"));
+        colName        .setCellValueFactory(new PropertyValueFactory<>("name"));
+        colType        .setCellValueFactory(new PropertyValueFactory<>("type"));
+        colStartPrice  .setCellValueFactory(new PropertyValueFactory<>("startPrice"));
         colCurrentPrice.setCellValueFactory(new PropertyValueFactory<>("currentPrice"));
-        colStatus.setCellValueFactory(new PropertyValueFactory<>("status"));
-
+        colStatus      .setCellValueFactory(new PropertyValueFactory<>("status"));
         myItemTable.setItems(myItems);
 
-        new Thread(() -> {
-            try {
-                Connection conn = DataConnection.getConnection();
-                if (conn == null) throw new Exception("Database connection failed");
+        ClientSocket.getInstance().addListener(this);
+    }
 
-                itemService    = new ItemService(new ItemDAOImpl(conn));
-                auctionService = new AuctionService(new AuctionDAOImpl(conn));
+    // ── ServerResponseListener ────────────────────────────────────────────────
 
-                List<Item> items = itemService.getItemsBySeller(sellerId);
-                List<SellRow> rows = buildRows(items);
+    @Override
+    public void onRespone(JsonObject json) {
+        if (!json.has("action")) return;
+        if (!"ADD_ITEM_SUCCESS".equals(json.get("action").getAsString())) return;
 
-                Platform.runLater(() -> {
-                    myItems.clear();
-                    myItems.addAll(rows);
-                });
-
-            } catch (Exception e) {
-                Platform.runLater(() -> showError("Failed to load data"));
-                e.printStackTrace();
+        AddItemResponse res = gson.fromJson(json, AddItemResponse.class);
+        Platform.runLater(() -> {
+            if (submitBtn != null) submitBtn.setDisable(false);
+            if (res.isSuccess()) {
+                // Thêm row mới vào bảng từ thông tin đã gửi
+                nameField.clear();
+                typeCombo.setValue(null);
+                priceField.clear();
+                uploadLabel.setText("");
+                selectedImage = null;
+                showSuccess("Đăng bán thành công!");
+            } else {
+                showError(res.getMessage() != null ? res.getMessage() : "Đăng bán thất bại");
             }
-        }).start();
+        });
     }
 
-    // Helper — build rows trên background thread
-    private List<SellRow> buildRows(List<Item> items) {
-        List<SellRow> rows = new ArrayList<>();
-        for (Item item : items) {
-            Auction auction     = auctionService.getAuctionByItemId(item.getId());
-            String startPrice   = auction != null ? fmt(auction.getStartingPrice()) : "-";
-            String currentPrice = auction != null ? fmt(auction.getCurrentPrice())  : "-";
-            String status       = auction != null ? auction.getStatus().name()      : "NO AUCTION";
-            rows.add(new SellRow(
-                    item.getId(), item.getName(), item.getType().name(),
-                    startPrice, currentPrice, status
-            ));
-        }
-        return rows;
-    }
-
-    // Reload bảng sau khi đăng item — chạy trên background thread
-    private void reloadTable() {
-        new Thread(() -> {
-            List<Item> items = itemService.getItemsBySeller(sellerId);
-            List<SellRow> rows = buildRows(items);
-            Platform.runLater(() -> {
-                myItems.clear();
-                myItems.addAll(rows);
-            });
-        }).start();
-    }
+    // ── Upload ────────────────────────────────────────────────────────────────
 
     @FXML
     public void handleUpload(ActionEvent event) {
         FileChooser fc = new FileChooser();
-        fc.setTitle("Select product image");
+        fc.setTitle("Chọn ảnh sản phẩm");
         fc.getExtensionFilters().add(
-                new FileChooser.ExtensionFilter("Image files", "*.png", "*.jpg", "*.jpeg")
-        );
-
-        Stage stage = (Stage)((Node)event.getSource()).getScene().getWindow();
+                new FileChooser.ExtensionFilter("Image files", "*.png", "*.jpg", "*.jpeg"));
+        Stage stage = (Stage) ((Node) event.getSource()).getScene().getWindow();
         selectedImage = fc.showOpenDialog(stage);
-
-        if (selectedImage != null) {
-            uploadLabel.setText("✓ " + selectedImage.getName());
-        }
+        if (selectedImage != null) uploadLabel.setText("✓ " + selectedImage.getName());
     }
+
+    // ── Submit ────────────────────────────────────────────────────────────────
 
     @FXML
     public void handleSell(ActionEvent event) {
@@ -175,143 +149,95 @@ public class SellController {
         messageLabel.setStyle("");
 
         String name      = nameField.getText().trim();
-        String type      = typeCombo.getValue();
+        String typeStr   = typeCombo.getValue();
         String priceText = priceField.getText().trim();
 
-        if (name.isEmpty())        { showError("Please enter item name"); return; }
-        if (type == null)          { showError("Please select item type"); return; }
-        if (priceText.isEmpty())   { showError("Please enter starting price"); return; }
-        if (selectedImage == null) { showError("Please select an image"); return; }
+        if (name.isEmpty())        { showError("Vui lòng nhập tên sản phẩm"); return; }
+        if (typeStr == null)       { showError("Vui lòng chọn loại sản phẩm"); return; }
+        if (priceText.isEmpty())   { showError("Vui lòng nhập giá khởi điểm"); return; }
+        if (selectedImage == null) { showError("Vui lòng chọn ảnh sản phẩm"); return; }
 
         BigDecimal startingPrice;
         try {
             startingPrice = new BigDecimal(priceText);
             if (startingPrice.compareTo(BigDecimal.ZERO) <= 0) {
-                showError("Price must be greater than 0");
-                return;
+                showError("Giá phải lớn hơn 0"); return;
             }
         } catch (NumberFormatException e) {
-            showError("Invalid price format");
-            return;
+            showError("Định dạng giá không hợp lệ"); return;
         }
 
-        Button submitBtn = (Button) event.getSource();
-        submitBtn.setDisable(true);
-
-        // Đọc và validate thời gian đấu giá
-        int hours, minutes;
-        try {
-            // commitEdit() để đảm bảo giá trị đã nhập được áp dụng
-            hoursSpinner.commitValue();
-            hours   = hoursSpinner.getValue();
-            minutes = minutesSpinner.getValue();
-        } catch (Exception e) {
-            showError("Invalid duration values");
-            return;
-        }
-
+        hoursSpinner.commitValue();
+        int hours        = hoursSpinner.getValue();
+        int minutes      = minutesSpinner.getValue();
         int totalMinutes = hours * 60 + minutes;
-        if (totalMinutes < 1) {
-            showError("Duration must be at least 1 minute");
-            return;
-        }
-        if (totalMinutes > 48 * 60) {
-            showError("Duration cannot exceed 48 hours (2 days)");
-            return;
-        }
 
-        final int finalHours   = hours;
-        final int finalMinutes = minutes;
+        if (totalMinutes < 30)      { showError("Thời gian tối thiểu là 30 phút"); return; }
+        if (totalMinutes > 48 * 60) { showError("Thời gian tối đa là 48 giờ");     return; }
+
+        submitBtn = (Button) event.getSource();
+        submitBtn.setDisable(true);
 
         new Thread(() -> {
             try {
-                byte[] imageBytes = FileUtils.toByteArray(selectedImage);
+                byte[]   imageBytes   = FileUtils.toByteArray(selectedImage);
                 if (imageBytes == null) {
-                    Platform.runLater(() -> {
-                        showError("Error reading image file");
-                        submitBtn.setDisable(false);
-                    });
+                    Platform.runLater(() -> { showError("Lỗi đọc file ảnh"); submitBtn.setDisable(false); });
                     return;
                 }
+                String imageBase64 = Base64.getEncoder().encodeToString(imageBytes);
 
-                Item item = itemService.createItem(name, type, sellerId, imageBytes);
-                boolean itemOk = itemService.addItem(item);
-                if (!itemOk) {
-                    Platform.runLater(() -> {
-                        showError("Failed to create item");
-                        submitBtn.setDisable(false);
-                    });
-                    return;
-                }
+                User   user      = SessionManager.getInstance().getCurrentUser();
+                String sessionId = SessionManager.getInstance().getSessionId();
+                ItemType itemType = ItemType.valueOf(typeStr);
 
                 LocalDateTime startTime = LocalDateTime.now();
-                LocalDateTime endTime   = startTime.plusHours(finalHours).plusMinutes(finalMinutes);
+                LocalDateTime endTime   = startTime.plusHours(hours).plusMinutes(minutes);
 
-                Auction auction = new Auction(
-                        0, item.getId(),
-                        startingPrice, startingPrice,
-                        startTime, endTime,
-                        AuctionStatus.OPEN
-                );
+                AddItemRequest req = new AddItemRequest(
+                        name, sessionId, itemType,
+                        startingPrice, imageBase64,
+                        startTime, endTime, user.getId());
 
-                boolean auctionOk = auctionService.createAuction(auction);
-                if (!auctionOk) {
-                    Platform.runLater(() -> {
-                        showError("Failed to create auction");
-                        submitBtn.setDisable(false);
-                    });
-                    return;
-                }
-
-                // Reset form trên UI thread
-                Platform.runLater(() -> {
-                    nameField.clear();
-                    typeCombo.setValue(null);
-                    priceField.clear();
-                    uploadLabel.setText("");
-                    selectedImage = null;
-                    showSuccess("Item listed successfully!");
-                    submitBtn.setDisable(false);
-                });
-
-                // Reload bảng trên background thread — không block UI
-                reloadTable();
+                ClientSocket.getInstance().sendMessage(req);
 
             } catch (Exception e) {
                 Platform.runLater(() -> {
-                    showError("Error: " + e.getMessage());
+                    showError("Lỗi: " + e.getMessage());
                     submitBtn.setDisable(false);
                 });
                 e.printStackTrace();
             }
         }).start();
-        //AddItemRequest addItemRequest = new AddItemRequest(name,sessionId,type,startingPrice,selectedImage,startTime,EndTime)
     }
 
-    private void showError(String message) {
-        messageLabel.setStyle("-fx-text-fill: #ff6b6b;");
-        messageLabel.setText(message);
-    }
-
-    private void showSuccess(String message) {
-        messageLabel.setStyle("-fx-text-fill: #00ff88;");
-        messageLabel.setText(message);
-    }
+    // ── Navigation ────────────────────────────────────────────────────────────
 
     @FXML
     public void Return(ActionEvent event) throws Exception {
+        ClientSocket.getInstance().removeListener(this);
         Parent root = FXMLLoader.load(getClass().getResource("/fxml/home.fxml"));
-        Stage stage = (Stage)((Node)event.getSource()).getScene().getWindow();
+        Stage stage = (Stage) ((Node) event.getSource()).getScene().getWindow();
         stage.setScene(new Scene(root));
         stage.show();
     }
 
-    private String fmt(BigDecimal n) {
-        return String.format("%,.0f ₫", n);
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private void showError(String msg) {
+        messageLabel.setStyle("-fx-text-fill: #ff6b6b;");
+        messageLabel.setText(msg);
     }
 
+    private void showSuccess(String msg) {
+        messageLabel.setStyle("-fx-text-fill: #00ff88;");
+        messageLabel.setText(msg);
+    }
+
+    // ── Inner class ───────────────────────────────────────────────────────────
+
     public static class SellRow {
-        private final int id;
+        private final int    id;
         private final String name, type, startPrice, currentPrice, status;
 
         public SellRow(int id, String name, String type,

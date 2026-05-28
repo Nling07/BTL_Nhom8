@@ -76,6 +76,14 @@ public class ClientHandler implements Runnable {
                         case "BID"       -> requestHandler.handleBid(gson.fromJson(json, BidRequest.class));
                         case "ADD_ITEM"  -> requestHandler.handleAddItem(gson.fromJson(json, AddItemRequest.class));
                         case "AUTO_BID"  -> requestHandler.handleAutoBid(gson.fromJson(json, AutoBidRequest.class));
+                        case "DEPOSIT"          -> requestHandler.handleDeposit(
+                                gson.fromJson(json, DepositRequest.class));
+                        case "UPGRADE_SELLER"   -> requestHandler.handleUpgradeSeller(
+                                gson.fromJson(json, UpgradeSellerRequest.class));
+                        case "GET_USER_BIDS"    -> requestHandler.handleGetUserBids(
+                                gson.fromJson(json, GetUserBidsRequest.class));
+                        case "GET_SELLER_ITEMS" -> requestHandler.handleGetSellerItems(
+                                gson.fromJson(json, GetSellerItemsRequest.class));
                     }
                 } catch (JsonSyntaxException e) {
                     System.err.println("JSON lỗi: " + e.getMessage());

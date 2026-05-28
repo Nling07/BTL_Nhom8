@@ -2,16 +2,16 @@ package com.btl.n8.DTO;
 
 public class RegisterRequest extends Request {
     private String userName;
-    private String userPassword;
+    private String passWord;
 
     public RegisterRequest() {}
 
-    public RegisterRequest(String userName, String userPassword) {
+    public RegisterRequest(String userName, String passWord) {
         super("REGISTER");
-        this.userName     = userName;
-        this.userPassword = userPassword;
+        this.userName = userName;
+        this.passWord = passWord;
     }
 
     public String getUserName()     { return userName; }
-    public String getUserPassword() { return userPassword; }
+    public String getUserPassword() { return passWord; }
 }

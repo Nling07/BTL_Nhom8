@@ -1,11 +1,15 @@
 package com.btl.n8.Controller;
 
-import com.btl.n8.Connection.DataConnection;
-import com.btl.n8.Connection.UserDAOImpl;
-import com.btl.n8.Model.Entity.Bidder;
+import com.btl.n8.DTO.RegisterRequest;
+import com.btl.n8.DTO.RegisterResponse;
+import com.btl.n8.Network.ClientSocket;
+import com.btl.n8.Network.ServerResponseListener;
+import com.btl.n8.Util.LocalDateTimeAdapter;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonObject;
 
 import javafx.application.Platform;
-import javafx.concurrent.Task;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
@@ -17,15 +21,25 @@ import javafx.scene.control.PasswordField;
 import javafx.scene.control.TextField;
 import javafx.stage.Stage;
 
-import java.math.BigDecimal;
-import java.sql.Connection;
+import java.time.LocalDateTime;
 
-public class RegisterController {
+public class RegisterController implements ServerResponseListener {
 
-    @FXML private TextField usernameField;
+    @FXML private TextField     usernameField;
     @FXML private PasswordField passwordField;
     @FXML private PasswordField rePasswordField;
-    @FXML private Label messageLabel;
+    @FXML private Label         messageLabel;
+
+    private ActionEvent pendingEvent;
+
+    private static final Gson gson = new GsonBuilder()
+            .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
+            .create();
+
+    @FXML
+    public void initialize() {
+        ClientSocket.getInstance().addListener(this);
+    }
 
     @FXML
     private void handleRegister(ActionEvent event) {
@@ -37,43 +51,37 @@ public class RegisterController {
         String rePassword = rePasswordField.getText().trim();
 
         if (username.isEmpty() || password.isEmpty() || rePassword.isEmpty()) {
-            showError("Please fill all fields"); return;
+            showError("Vui lòng điền đầy đủ thông tin"); return;
         }
         if (username.length() < 3) {
-            showError("Username must be at least 3 characters"); return;
+            showError("Tên tài khoản phải ít nhất 3 ký tự"); return;
         }
         if (!password.equals(rePassword)) {
-            showError("Passwords do not match"); return;
+            showError("Mật khẩu không khớp"); return;
         }
         if (password.length() < 6) {
-            showError("Password must be at least 6 characters"); return;
+            showError("Mật khẩu phải ít nhất 6 ký tự"); return;
         }
 
-        Bidder newUser = new Bidder(username, password, BigDecimal.ZERO);
+        pendingEvent = event;
+        ClientSocket.getInstance().sendMessage(new RegisterRequest(username, password));
+    }
 
-        Task<Void> registerTask = new Task<>() {
-            @Override
-            protected Void call() throws Exception {
-                Connection conn = DataConnection.getConnection();
-                if (conn == null) throw new Exception("Database connection failed");
-                UserDAOImpl userDAO = new UserDAOImpl(conn);
-                boolean success = userDAO.insert(newUser);
-                if (!success) throw new Exception("Username already exists");
-                return null;
+    @Override
+    public void onRespone(JsonObject json) {
+        if (!json.has("action")) return;
+        String action = json.get("action").getAsString();
+        if (!"REGISTER_SUCCESS".equals(action)) return;
+
+        RegisterResponse res = gson.fromJson(json, RegisterResponse.class);
+        Platform.runLater(() -> {
+            ClientSocket.getInstance().removeListener(this);
+            if (res.isSuccess()) {
+                try { goLogin(pendingEvent); } catch (Exception e) { e.printStackTrace(); }
+            } else {
+                showError(res.getMessage() != null ? res.getMessage() : "Đăng ký thất bại");
             }
-        };
-
-        registerTask.setOnSucceeded(e -> Platform.runLater(() -> {
-            try { goLogin(event); } catch (Exception ex) { ex.printStackTrace(); }
-        }));
-
-        registerTask.setOnFailed(e -> Platform.runLater(() ->
-                showError(registerTask.getException().getMessage() != null
-                        ? registerTask.getException().getMessage()
-                        : "Registration failed. Please try again.")
-        ));
-
-        new Thread(registerTask).start();
+        });
     }
 
     private void showError(String message) {
@@ -83,7 +91,7 @@ public class RegisterController {
 
     public void goLogin(ActionEvent event) throws Exception {
         Parent root = FXMLLoader.load(getClass().getResource("/fxml/login.fxml"));
-        Stage stage = (Stage)((Node)event.getSource()).getScene().getWindow();
+        Stage stage = (Stage) ((Node) event.getSource()).getScene().getWindow();
         stage.setScene(new Scene(root));
         stage.show();
     }
