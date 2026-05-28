@@ -1,0 +1,36 @@
+package com.btl.n8;
+
+import com.btl.n8.Network.ClientSocket;
+import javafx.application.Application;
+import javafx.fxml.FXMLLoader;
+import javafx.scene.Scene;
+import javafx.stage.Stage;
+
+import java.sql.SQLException;
+
+public class Main extends Application {
+
+    @Override
+    public void start(Stage stage) throws Exception {
+
+        // CONNECT SOCKET
+        ClientSocket.getInstance().connect();
+
+        FXMLLoader loader =
+                new FXMLLoader(
+                        getClass().getResource("/fxml/login.fxml")
+                );
+
+        stage.setTitle("Pokemon Auction System");
+
+        stage.setScene(new Scene(loader.load()));
+
+        stage.setResizable(false);
+
+        stage.show();
+    }
+
+    public static void main(String[] args) throws SQLException {
+        launch();
+    }
+}
