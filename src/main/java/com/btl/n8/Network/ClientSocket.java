@@ -11,6 +11,7 @@ import java.io.*;
 import java.net.Socket;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ClientSocket {
     private static volatile ClientSocket instance;
@@ -26,6 +27,9 @@ public class ClientSocket {
             .create();
 
     private final List<ServerResponseListener> listeners = new CopyOnWriteArrayList<>();
+
+    // Guard chống multiple listening threads khi connect() bị gọi nhiều lần
+    private final AtomicBoolean listening = new AtomicBoolean(false);
 
     private ClientSocket() {}
 
@@ -85,23 +89,48 @@ public class ClientSocket {
     }
 
     private void startListening() {
+        // Nếu đã có 1 thread đang lắng nghe thì không tạo thêm —
+        // tránh tình trạng connect() bị gọi nhiều lần sinh ra nhiều thread
+        // cùng đọc 1 stream, khiến message bị "nuốt" bởi thread sai.
+        if (!listening.compareAndSet(false, true)) {
+            System.out.println("[ClientSocket] Listening thread đã chạy, bỏ qua.");
+            return;
+        }
+
         Thread t = new Thread(() -> {
             try {
                 String json;
                 while ((json = in.readLine()) != null) {
-                    JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
-                    for (ServerResponseListener l : listeners) {
-                        l.onRespone(obj);
+                    final String line = json;
+                    try {
+                        // Parse 1 lần để validate JSON hợp lệ
+                        JsonParser.parseString(line).getAsJsonObject();
+
+                        // Mỗi listener nhận 1 bản parse riêng — tránh 1 listener
+                        // modify object ảnh hưởng đến listener tiếp theo.
+                        for (ServerResponseListener l : listeners) {
+                            try {
+                                JsonObject copy = JsonParser.parseString(line).getAsJsonObject();
+                                l.onRespone(copy);
+                            } catch (Exception listenerEx) {
+                                // 1 listener crash KHÔNG làm chết listening thread
+                                System.err.println("[ClientSocket] Listener error: " + listenerEx.getMessage());
+                            }
+                        }
+                    } catch (com.google.gson.JsonSyntaxException jsonEx) {
+                        // JSON lỗi → bỏ qua message này, KHÔNG dừng thread
+                        System.err.println("[ClientSocket] JSON parse error (skipped): " + jsonEx.getMessage());
                     }
                 }
             } catch (IOException e) {
                 System.out.println("Mất kết nối server!");
             } finally {
-                // Tự reset khi socket chết → lần login tiếp theo connect lại được
+                listening.set(false); // cho phép tạo lại thread khi connect() lại
                 reset();
             }
         });
         t.setDaemon(true);
+        t.setName("ClientSocket-listener");
         t.start();
     }
 
