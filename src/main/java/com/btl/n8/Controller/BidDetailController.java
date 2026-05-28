@@ -231,8 +231,13 @@ public class BidDetailController implements ServerResponseListener {
             XYChart.Series<String, Number> series = new XYChart.Series<>();
             series.setName("Price");
             DateTimeFormatter fmt = DateTimeFormatter.ofPattern("HH:mm:ss");
-            for (Bid bid : bids) {
-                series.getData().add(new XYChart.Data<>(bid.getBidTime().format(fmt), bid.getAmount()));
+            // Dùng "#index time" làm label để:
+            //   1. Không bao giờ trùng label dù 2 bid cùng giây
+            //   2. CategoryAxis giữ đúng thứ tự insert (trái → phải = cũ → mới)
+            for (int i = 0; i < bids.size(); i++) {
+                Bid bid = bids.get(i);
+                String label = (i + 1) + " " + bid.getBidTime().format(fmt);
+                series.getData().add(new XYChart.Data<>(label, bid.getAmount()));
             }
             Platform.runLater(() -> {
                 bidChart.getData().clear();
