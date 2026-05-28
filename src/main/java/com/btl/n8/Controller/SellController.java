@@ -88,11 +88,10 @@ public class SellController {
                 new javafx.scene.control.SpinnerValueFactory.IntegerSpinnerValueFactory(0, 48, 1));
         hoursSpinner.setEditable(true);
 
-        // Minutes: 0 hoặc 30, mặc định 0
+        // Minutes: 0–59, mặc định 0
         minutesSpinner.setValueFactory(
-                new javafx.scene.control.SpinnerValueFactory.ListSpinnerValueFactory<>(
-                        javafx.collections.FXCollections.observableArrayList(0, 30)));
-        minutesSpinner.setEditable(false);
+                new javafx.scene.control.SpinnerValueFactory.IntegerSpinnerValueFactory(0, 59, 0));
+        minutesSpinner.setEditable(true);
 
         colId.setCellValueFactory(new PropertyValueFactory<>("id"));
         colName.setCellValueFactory(new PropertyValueFactory<>("name"));
@@ -212,8 +211,8 @@ public class SellController {
         }
 
         int totalMinutes = hours * 60 + minutes;
-        if (totalMinutes < 30) {
-            showError("Duration must be at least 30 minutes");
+        if (totalMinutes < 1) {
+            showError("Duration must be at least 1 minute");
             return;
         }
         if (totalMinutes > 48 * 60) {
