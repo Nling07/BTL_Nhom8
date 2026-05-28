@@ -48,7 +48,13 @@ public class AutoBidManager implements ServerResponseListener {
         public final BigDecimal maxPrice;
         public final BigDecimal step;
         public       Auction    auction;
-        public final AtomicBoolean active = new AtomicBoolean(true);
+        public final AtomicBoolean active  = new AtomicBoolean(true);
+        /**
+         * true = mình đang là highest bidder (vừa bid thành công, chưa bị ai vượt).
+         * Khi isLeading=true, AutoBid KHÔNG tự bid lại — chỉ bid khi bị người khác vượt.
+         * Khởi tạo = false để lần đầu activate sẽ bid nếu chưa dẫn đầu.
+         */
+        public volatile boolean isLeading = false;
 
         public AutoBidSession(int auctionId, int bidderId,
                               BigDecimal maxPrice, BigDecimal step,
@@ -95,7 +101,11 @@ public class AutoBidManager implements ServerResponseListener {
             ClientSocket.getInstance().addListener(this);
         }
 
-        // Check ngay xem có đang bị outbid không
+        // Chỉ bid ngay nếu mình CHƯA dẫn đầu auction.
+        // Kiểm tra: nếu auction != null và currentPrice < maxPrice thì thử bid.
+        // isLeading = false theo mặc định → checkAndBid sẽ bid 1 lần để giành dẫn đầu.
+        // Nếu mình đang dẫn đầu rồi (ví dụ vừa bid tay trước khi bật AutoBid),
+        // server sẽ trả về lỗi "giá phải cao hơn" → AutoBid dừng yên chờ người khác vượt.
         checkAndBid(session);
     }
 
@@ -136,7 +146,14 @@ public class AutoBidManager implements ServerResponseListener {
         if (!"BID_UPDATE".equals(response.get("action").getAsString())) return;
 
         BidResponse res = gson.fromJson(response, BidResponse.class);
-        if (!res.isSuccess()) return;
+        if (!res.isSuccess()) {
+            // Server từ chối bid — reset isLeading để có thể thử lại nếu cần
+            AutoBidSession s = sessions.get(res.getAuctionId());
+            if (s != null && s.bidderId == res.getBidderId()) {
+                s.isLeading = false;
+            }
+            return;
+        }
 
         int auctionId = res.getAuctionId();
         AutoBidSession session = sessions.get(auctionId);
@@ -150,21 +167,24 @@ public class AutoBidManager implements ServerResponseListener {
             }
         }
 
-        // FIX: chỉ react khi người vừa bid KHÔNG phải chính mình.
-        // Điều này ngăn AutoBid tự kích hoạt lại ngay sau khi vừa đặt giá thành công,
-        // tránh vòng lặp vô tận trong trường hợp nhiều phiên / nhiều client cùng user.
-        if (res.getBidderId() != session.bidderId) {
+        if (res.getBidderId() == session.bidderId) {
+            // Chính mình vừa bid thành công → đánh dấu đang dẫn đầu, KHÔNG bid lại.
+            session.isLeading = true;
+        } else {
+            // Người khác vừa bid → mình bị vượt giá → cần phản ứng.
+            session.isLeading = false;
             Platform.runLater(() -> checkAndBid(session));
         }
-        // Nếu chính mình vừa bid thành công nhờ AutoBid: không làm gì thêm.
-        // currentPrice đã được cập nhật ở trên — lần bid tiếp theo (nếu cần) sẽ
-        // được trigger khi CÓ người khác vượt giá.
     }
 
     // ── AutoBid logic ─────────────────────────────────────────────────────────
 
     private void checkAndBid(AutoBidSession session) {
         if (!session.active.get() || session.auction == null) return;
+
+        // Guard: nếu đang dẫn đầu rồi thì không cần bid thêm.
+        // isLeading sẽ bị reset về false khi người khác vượt giá (trong onRespone).
+        if (session.isLeading) return;
 
         if (session.auction.getStatus() != AuctionStatus.OPEN) {
             cancelSilent(session.auctionId);
@@ -200,6 +220,10 @@ public class AutoBidManager implements ServerResponseListener {
         }
 
         final BigDecimal bidAmount = nextBid;
+        // Đánh dấu đang chờ bid confirm — ngăn checkAndBid gửi thêm bid trùng lặp
+        // trong khoảng thời gian server đang xử lý. isLeading sẽ được confirm lại
+        // khi server trả về BID_UPDATE với bidderId = mình.
+        session.isLeading = true;
         new Thread(() -> {
             // Delay nhỏ để chắc server đã commit bid trước trước khi gửi bid tiếp
             try { Thread.sleep(300); } catch (InterruptedException ignored) {}
