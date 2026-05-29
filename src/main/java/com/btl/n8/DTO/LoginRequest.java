@@ -1,17 +1,17 @@
 package com.btl.n8.DTO;
 
 public class LoginRequest extends Request {
-    private String username;
-    private String password;
+    private String userName;
+    private String passWord;
 
     public LoginRequest() {}
 
-    public LoginRequest(String username, String password) {
+    public LoginRequest(String userName, String passWord) {
         super("LOGIN");
-        this.username = username;
-        this.password = password;
+        this.userName = userName;
+        this.passWord = passWord;
     }
 
-    public String getUsername() { return username; }
-    public String getPassword() { return password; }
+    public String getUsername() { return userName; }
+    public String getPassword() { return passWord; }
 }

@@ -19,9 +19,15 @@ public class ServiceFactory {
 
     private ServiceFactory() {} // utility class, không cho new
 
-    public static UserService    createUserService(Connection conn)    { return new UserService(new UserDAOImpl(conn)); }
-    public static BidService     createBidService(Connection conn)     { return new BidService(new BidDAOImpl(conn)); }
-    public static ItemService    createItemService(Connection conn)    { return new ItemService(new ItemDAOImpl(conn)); }
-    public static AuctionService createAuctionService(Connection conn) { return new AuctionService(new AuctionDAOImpl(conn)); }
-    public static AdminService   createAdminService(Connection conn)   { return new AdminService(new UserDAOImpl(conn), new AuctionDAOImpl(conn), new ItemDAOImpl(conn)); }
+    public static UserService               createUserService(Connection conn)               { return new UserService(new UserDAOImpl(conn)); }
+    public static BidService                createBidService(Connection conn)                { return new BidService(new BidDAOImpl(conn)); }
+    public static ItemService               createItemService(Connection conn)               { return new ItemService(new ItemDAOImpl(conn)); }
+    public static AuctionService            createAuctionService(Connection conn)            { return new AuctionService(new AuctionDAOImpl(conn)); }
+    public static AdminService              createAdminService(Connection conn)              { return new AdminService(new UserDAOImpl(conn), new AuctionDAOImpl(conn), new ItemDAOImpl(conn)); }
+
+    /** Service xử lý logic cho màn hình danh sách đấu giá (BidController). */
+    public static BidControllerService      createBidControllerService()                    { return new BidControllerService(); }
+
+    /** Service xử lý logic cho màn hình chi tiết đấu giá (BidDetailController). */
+    public static BidDetailControllerService createBidDetailControllerService()             { return new BidDetailControllerService(); }
 }

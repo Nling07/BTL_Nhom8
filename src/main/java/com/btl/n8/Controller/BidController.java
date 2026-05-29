@@ -1,17 +1,15 @@
 package com.btl.n8.Controller;
 
-import com.btl.n8.Connection.*;
-import com.btl.n8.Model.Entity.Item;
-import com.btl.n8.Service.AuctionService;
-import com.btl.n8.Service.ItemService;
 import com.btl.n8.DTO.BidResponse;
+import com.btl.n8.DTO.GetAuctionDetailResponse;
+import com.btl.n8.DTO.GetAuctionListResponse;
 import com.btl.n8.Network.ClientSocket;
 import com.btl.n8.Network.ServerResponseListener;
+import com.btl.n8.Service.BidControllerService;
 import com.btl.n8.Util.LocalDateTimeAdapter;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
-import java.time.LocalDateTime;
 
 import javafx.application.Platform;
 import javafx.beans.property.SimpleStringProperty;
@@ -28,15 +26,13 @@ import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 
-import java.sql.Connection;
-import java.util.List;
+import java.time.LocalDateTime;
 import java.util.stream.Collectors;
 
 public class BidController implements ServerResponseListener {
 
-    // ── FXML ──────────────────────────────────────────────────────────────────
-    @FXML private TextField searchField;
-    @FXML private TableView<ItemRow> itemTable;
+    @FXML private TextField              searchField;
+    @FXML private TableView<ItemRow>     itemTable;
     @FXML private TableColumn<ItemRow, String> colId;
     @FXML private TableColumn<ItemRow, String> colName;
     @FXML private TableColumn<ItemRow, String> colType;
@@ -44,11 +40,11 @@ public class BidController implements ServerResponseListener {
     @FXML private TableColumn<ItemRow, String> colStatus;
     @FXML private TableColumn<ItemRow, Void>   colAction;
 
-    // ── State ─────────────────────────────────────────────────────────────────
     private final ObservableList<ItemRow> allItems = FXCollections.observableArrayList();
-    private ItemService       itemService;
-    private AuctionService    auctionService;
-    private AuctionDAOImpl    auctionDAOImpl;   // FIX: giữ ref để gọi closeExpiredAuctions
+
+    /** Service xử lý toàn bộ logic — Controller không tự gửi request hay xử lý data */
+    private final BidControllerService bidControllerService = new BidControllerService();
+
     private static final Gson gson = new GsonBuilder()
             .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
             .create();
@@ -58,12 +54,70 @@ public class BidController implements ServerResponseListener {
     @FXML
     public void initialize() {
         setupColumns();
-        loadData();
         ClientSocket.getInstance().addListener(this);
+        loadData();
     }
 
-    private void cleanup() {
+    public void cleanup() {
         ClientSocket.getInstance().removeListener(this);
+    }
+
+    // ── Load data qua socket ──────────────────────────────────────────────────
+
+    private void loadData() {
+        String sessionId = SessionManager.getInstance().getSessionId();
+        bidControllerService.requestAuctionList(sessionId);
+    }
+
+    // ── ServerResponseListener ────────────────────────────────────────────────
+
+    @Override
+    public void onRespone(JsonObject response) {
+        if (!response.has("action")) return;
+        String action = response.get("action").getAsString();
+
+        switch (action) {
+            case "AUCTION_LIST_RESULT" -> {
+                GetAuctionListResponse res = gson.fromJson(response, GetAuctionListResponse.class);
+                if (!res.isSuccess() || res.getRows() == null) return;
+                Platform.runLater(() -> {
+                    allItems.clear();
+                    for (GetAuctionListResponse.AuctionRow r : res.getRows()) {
+                        // Tên biến khớp với AuctionDAO.findAllWithItems():
+                        // r.itemId, r.itemName, r.itemType, r.currentPrice, r.status, r.auctionId, r.sellerId
+                        allItems.add(new ItemRow(
+                                r.itemId,
+                                r.itemName,
+                                r.itemType,
+                                r.currentPrice != null
+                                        ? String.format("%,.0f ₫", r.currentPrice) : "-",
+                                r.status != null ? r.status : "NO AUCTION",
+                                r.auctionId,
+                                r.sellerId));
+                    }
+                    itemTable.setItems(allItems);
+                });
+            }
+            case "BID_UPDATE" -> {
+                BidResponse res = gson.fromJson(response, BidResponse.class);
+                if (!res.isSuccess()) return;
+                Platform.runLater(() -> {
+                    for (int i = 0; i < allItems.size(); i++) {
+                        ItemRow row = allItems.get(i);
+                        if (row.getAuctionId() == res.getAuctionId()) {
+                            row.setPrice(String.format("%,.0f ₫", res.getCurrentPrice()));
+                            row.setStatus("OPEN");
+                            allItems.set(i, row);
+                            break;
+                        }
+                    }
+                });
+            }
+            case "AUCTION_SETTLED" -> {
+                // Reload danh sách khi có phiên kết thúc
+                Platform.runLater(this::loadData);
+            }
+        }
     }
 
     // ── Column setup ──────────────────────────────────────────────────────────
@@ -89,106 +143,18 @@ public class BidController implements ServerResponseListener {
             @Override
             protected void updateItem(Void item, boolean empty) {
                 super.updateItem(item, empty);
-                if (empty) {
-                    setGraphic(null);
-                } else {
-                    ItemRow row = getTableRow().getItem();
-                    if (row == null) { setGraphic(null); return; }
+                if (empty) { setGraphic(null); return; }
+                ItemRow row = getTableRow().getItem();
+                if (row == null) { setGraphic(null); return; }
 
-                    int currentUserId = SessionManager.getInstance().getCurrentUser().getId();
-                    boolean isOwnItem = row.getSellerId() == currentUserId;
-                    boolean auctionOpen = row.getAuctionId() != -1 && "OPEN".equals(row.getStatus());
+                int     uid    = SessionManager.getInstance().getCurrentUser().getId();
+                boolean isOwn  = bidControllerService.isOwnItem(row.getSellerId(), uid);
+                boolean isOpen = bidControllerService.isAuctionOpen(row.getAuctionId(), row.getStatus());
 
-                    btn.setDisable(!auctionOpen || isOwnItem);
-
-                    if (isOwnItem) {
-                        btn.setText("Của bạn");
-                        btn.setStyle("-fx-opacity: 0.5;");
-                    } else {
-                        btn.setText("Bid");
-                        btn.setStyle("");
-                    }
-                    setGraphic(btn);
-                }
-            }
-        });
-    }
-
-    // ── Data loading ──────────────────────────────────────────────────────────
-
-    /**
-     * FIX BUG 1: Gọi closeExpiredAuctions() TRƯỚC khi query danh sách.
-     * DB sẽ tự update status CLOSED cho auction hết giờ → bảng hiển thị đúng.
-     */
-    private void loadData() {
-        new Thread(() -> {
-            try {
-                Connection conn = DataConnection.getConnection();
-                if (conn == null) throw new Exception("Database connection failed");
-
-                itemService    = new ItemService(new ItemDAOImpl(conn));
-                auctionDAOImpl = new AuctionDAOImpl(conn);
-                auctionService = new AuctionService(auctionDAOImpl);
-
-                // FIX BUG 1: đóng auction hết giờ trước khi load
-                int closed = auctionDAOImpl.closeExpiredAuctions();
-                if (closed > 0) {
-                    System.out.println("Auto-closed " + closed + " expired auction(s).");
-                }
-
-                List<ItemAuctionRow> joined = auctionDAOImpl.findAllWithItems();
-
-                ObservableList<ItemRow> tempList = FXCollections.observableArrayList();
-                for (ItemAuctionRow r : joined) {
-                    tempList.add(new ItemRow(
-                            r.itemId, r.itemName, r.itemType,
-                            r.currentPrice != null
-                                    ? String.format("%,.0f ₫", r.currentPrice)
-                                    : "-",
-                            r.status != null ? r.status : "NO AUCTION",
-                            r.auctionId,
-                            r.sellerId
-                    ));
-                }
-
-                Platform.runLater(() -> {
-                    allItems.setAll(tempList);
-                    itemTable.setItems(allItems);
-                });
-
-            } catch (Exception e) {
-                Platform.runLater(() -> showError("Failed to load items: " + e.getMessage()));
-                e.printStackTrace();
-            }
-        }).start();
-    }
-
-    // ── Socket listener ───────────────────────────────────────────────────────
-
-    /**
-     * FIX BUG 3: Nhận BID_UPDATE → cập nhật ngay cả giá lẫn status trong bảng.
-     * Không cần reload toàn bộ danh sách.
-     */
-    @Override
-    public void onRespone(JsonObject response) {
-        if (!response.has("action")) return;
-        String action = response.get("action").getAsString();
-        if (!"BID_UPDATE".equals(action)) return;
-
-        BidResponse res = gson.fromJson(response, BidResponse.class);
-        if (!res.isSuccess()) return;
-
-        Platform.runLater(() -> {
-            for (int i = 0; i < allItems.size(); i++) {
-                ItemRow row = allItems.get(i);
-                if (row.getAuctionId() == res.getAuctionId()) {
-                    row.setPrice(String.format("%,.0f ₫", res.getCurrentPrice()));
-                    row.setStatus("OPEN");
-                    // Dùng set(i, row) để fire ListChangeListener trên ObservableList
-                    // → TableView tự re-render row đó mà không cần refresh() toàn bộ
-                    allItems.set(i, row);
-                    break;
-                }
+                btn.setDisable(!isOpen || isOwn);
+                btn.setText(isOwn ? "Của bạn" : "Bid");
+                btn.setStyle(isOwn ? "-fx-opacity: 0.5;" : "");
+                setGraphic(btn);
             }
         });
     }
@@ -196,31 +162,33 @@ public class BidController implements ServerResponseListener {
     // ── Bid popup ─────────────────────────────────────────────────────────────
 
     private void openBidPopup(ItemRow row, Button btn) {
-        if (itemService == null) {
-            showError("Data is still loading");
-            btn.setDisable(false);
-            return;
-        }
+        // Lấy item detail qua service trước khi mở popup
+        String sessionId = SessionManager.getInstance().getSessionId();
+        bidControllerService.requestAuctionDetail(sessionId, row.getAuctionId());
 
-        new Thread(() -> {
-            try {
-                Item item = itemService.getItemById(row.getId());
-                if (item == null) {
-                    Platform.runLater(() -> {
-                        showError("Item not found");
-                        btn.setDisable(false);
-                    });
-                    return;
-                }
+        // Đăng ký listener một lần để nhận detail rồi mở popup
+        ServerResponseListener detailListener = new ServerResponseListener() {
+            @Override
+            public void onRespone(JsonObject json) {
+                if (!json.has("action")) return;
+                if (!"AUCTION_DETAIL_RESULT".equals(json.get("action").getAsString())) return;
+                ClientSocket.getInstance().removeListener(this);
+
+                GetAuctionDetailResponse res =
+                        gson.fromJson(json, GetAuctionDetailResponse.class);
 
                 Platform.runLater(() -> {
+                    if (!res.isSuccess() || res.getAuction() == null) {
+                        showError("Không tải được thông tin phiên đấu giá");
+                        btn.setDisable(false);
+                        return;
+                    }
                     try {
                         FXMLLoader loader = new FXMLLoader(
                                 getClass().getResource("/fxml/bidDetails.fxml"));
                         Parent root = loader.load();
 
-                        BidDetailController controller = loader.getController();
-
+                        BidDetailController ctrl = loader.getController();
                         Stage popup = new Stage();
                         popup.initStyle(StageStyle.UNDECORATED);
                         popup.setTitle("Bid - " + row.getName());
@@ -229,62 +197,22 @@ public class BidController implements ServerResponseListener {
                         popup.setResizable(false);
 
                         popup.setOnHidden(e -> {
-                            controller.cleanup();
+                            ctrl.cleanup();
                             btn.setDisable(false);
-                            // FIX BUG 3: reload nhẹ sau khi đóng popup
-                            // để bảng cập nhật giá + status mới nhất
-                            refreshTableFromDB();
+                            loadData();   // Reload nhẹ sau khi đóng popup
                         });
 
-                        // FIX: initData() TRƯỚC popup.show() — đảm bảo listener socket
-                        // và auctionService đã sẵn sàng trước khi UI hiện ra.
-                        // Nếu server gửi BID_UPDATE ngay lúc popup mở, sẽ không bị NPE.
-                        controller.initData(row.getAuctionId(), item);
+                        ctrl.initData(row.getAuctionId(), res.getAuction());
                         popup.show();
 
                     } catch (Exception ex) {
-                        showError("Failed to open auction: " + ex.getMessage());
+                        showError("Lỗi mở cửa sổ: " + ex.getMessage());
                         btn.setDisable(false);
-                        ex.printStackTrace();
                     }
                 });
-
-            } catch (Exception e) {
-                Platform.runLater(() -> {
-                    showError("Failed to load item: " + e.getMessage());
-                    btn.setDisable(false);
-                });
-                e.printStackTrace();
             }
-        }).start();
-    }
-
-    /**
-     * FIX BUG 3: Reload nhẹ — chỉ update price + status cho từng row
-     * mà không rebuild toàn bộ list (tránh nhấp nháy).
-     */
-    private void refreshTableFromDB() {
-        if (auctionDAOImpl == null) return;
-        new Thread(() -> {
-            // đóng auction hết giờ trước
-            auctionDAOImpl.closeExpiredAuctions();
-
-            List<ItemAuctionRow> joined = auctionDAOImpl.findAllWithItems();
-            Platform.runLater(() -> {
-                for (ItemAuctionRow r : joined) {
-                    for (ItemRow row : allItems) {
-                        if (row.getId() == r.itemId) {
-                            row.setPrice(r.currentPrice != null
-                                    ? String.format("%,.0f ₫", r.currentPrice)
-                                    : "-");
-                            row.setStatus(r.status != null ? r.status : "NO AUCTION");
-                            break;
-                        }
-                    }
-                }
-                itemTable.refresh();
-            });
-        }).start();
+        };
+        ClientSocket.getInstance().addListener(detailListener);
     }
 
     // ── Search ────────────────────────────────────────────────────────────────
@@ -292,18 +220,13 @@ public class BidController implements ServerResponseListener {
     @FXML
     public void handleSearch(ActionEvent event) {
         String query = searchField.getText().trim();
-
-        if (query.isEmpty()) {
-            itemTable.setItems(allItems);
-            return;
-        }
+        if (query.isEmpty()) { itemTable.setItems(allItems); return; }
 
         ObservableList<ItemRow> filtered = FXCollections.observableArrayList();
         try {
             int id = Integer.parseInt(query);
             filtered.addAll(allItems.stream()
-                    .filter(r -> r.getId() == id)
-                    .collect(Collectors.toList()));
+                    .filter(r -> r.getId() == id).collect(Collectors.toList()));
         } catch (NumberFormatException e) {
             filtered.addAll(allItems.stream()
                     .filter(r -> r.getName().toLowerCase().contains(query.toLowerCase()))
@@ -325,25 +248,23 @@ public class BidController implements ServerResponseListener {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private void showError(String message) {
-        Alert alert = new Alert(Alert.AlertType.ERROR);
-        alert.setTitle("Error");
-        alert.setHeaderText(null);
-        alert.setContentText(message);
-        alert.showAndWait();
+    private void showError(String msg) {
+        Alert a = new Alert(Alert.AlertType.ERROR);
+        a.setHeaderText(null);
+        a.setContentText(msg);
+        a.showAndWait();
     }
 
     // ── Inner classes ─────────────────────────────────────────────────────────
 
+    /**
+     * Row model dùng cho TableView trong BidController.
+     * Lưu ý: class này chỉ dành cho UI — không dùng làm DTO truyền qua mạng.
+     * DTO truyền qua mạng dùng {@link com.btl.n8.DTO.ItemAuctionRow}.
+     */
     public static class ItemRow {
-        private final int id;
-        private final int auctionId;
-        private final int sellerId;
-        private final SimpleStringProperty idProp;
-        private final SimpleStringProperty name;
-        private final SimpleStringProperty type;
-        private final SimpleStringProperty price;
-        private final SimpleStringProperty status;
+        private final int id, auctionId, sellerId;
+        private final SimpleStringProperty idProp, name, type, price, status;
 
         public ItemRow(int id, String name, String type,
                        String price, String status, int auctionId, int sellerId) {
@@ -367,26 +288,34 @@ public class BidController implements ServerResponseListener {
         public int    getAuctionId() { return auctionId; }
         public int    getSellerId()  { return sellerId; }
         public String getName()      { return name.get(); }
-        public String getType()      { return type.get(); }
-        public String getPrice()     { return price.get(); }
         public String getStatus()    { return status.get(); }
 
         public void setPrice(String v)  { price.set(v); }
         public void setStatus(String v) { status.set(v); }
     }
 
+    /**
+     * Giữ lại inner class này để tương thích ngược với AuctionDAOImpl cũ (nếu vẫn còn build cũ).
+     * Sau khi đã migrate AuctionDAO sang dùng {@link com.btl.n8.DTO.ItemAuctionRow},
+     * class này có thể xóa đi.
+     *
+     * @deprecated Dùng {@link com.btl.n8.DTO.ItemAuctionRow} thay thế.
+     */
+    @Deprecated
     public static class ItemAuctionRow {
-        public int    itemId;
-        public String itemName;
-        public String itemType;
+        public int        itemId;
+        public String     itemName;
+        public String     itemType;
         public java.math.BigDecimal currentPrice;
-        public String status;
-        public int    auctionId;
-        public int    sellerId;
+        public String     status;
+        public int        auctionId;
+        public int        sellerId;
+
+        public ItemAuctionRow() {}
 
         public ItemAuctionRow(int itemId, String itemName, String itemType,
-                              java.math.BigDecimal currentPrice,
-                              String status, int auctionId, int sellerId) {
+                              java.math.BigDecimal currentPrice, String status,
+                              int auctionId, int sellerId) {
             this.itemId       = itemId;
             this.itemName     = itemName;
             this.itemType     = itemType;

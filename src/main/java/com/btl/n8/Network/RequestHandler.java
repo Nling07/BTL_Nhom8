@@ -6,6 +6,7 @@ import com.btl.n8.Exception.InvalidBidException;
 import com.btl.n8.Connection.*;
 import com.btl.n8.Model.Entity.Auction;
 import com.btl.n8.Model.Entity.Bid;
+import com.btl.n8.Model.Entity.Item;
 import com.btl.n8.Model.Entity.User;
 import com.btl.n8.Model.Enums.AuctionStatus;
 import com.btl.n8.DTO.*;
@@ -15,6 +16,8 @@ import com.google.gson.*;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.time.LocalDateTime;
+import java.util.Base64;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 import com.btl.n8.Util.LocalDateTimeAdapter;
@@ -251,8 +254,7 @@ public class RequestHandler {
                         + (previousActiveBid != null ? previousActiveBid.getAmount() : "NONE"));
 
                 // 1. Cập nhật current_price
-                boolean auctionUpdated = auctionService.getAuctionDAO()
-                        .updateCurrentPrice(auctionId, amount);
+                boolean auctionUpdated = auctionService.updateCurrentPrice(auctionId, amount);
                 System.out.println("[DEBUG-TXN] updateCurrentPrice → " + auctionUpdated);
                 if (!auctionUpdated) {
                     conn.rollback();
@@ -358,110 +360,32 @@ public class RequestHandler {
     }
 
     // ── ADD_ITEM ──────────────────────────────────────────────────────────────
-    // ── ADD_ITEM ──────────────────────────────────────────────────────────────
-    // Thay thế đoạn "Not implemented" bằng implementation đầy đủ.
-    // Đặt đoạn này vào RequestHandler.java tại vị trí handleAddItem().
 
     public void handleAddItem(AddItemRequest req) {
         try {
-            // 1. Xác thực session
             User user = ServerSessionManager.getInstance().getUser(req.getSessionId());
             if (user == null) throw new AuthenticationException("Chưa đăng nhập");
 
-            // 2. Kiểm tra role — chỉ SELLER mới được thêm item
-            if (user.getRole() != com.btl.n8.Model.Enums.Role.SELLER) {
-                send(new AddItemResponse("Chỉ Seller mới có thể đăng bán", req.getSessionId(),
-                        false, -1, -1, null));
-                return;
-            }
+            byte[] imageBytes = req.getImageBase64() != null
+                    ? Base64.getDecoder().decode(req.getImageBase64()) : null;
 
-            // 3. Validate dữ liệu cơ bản
-            if (req.getName() == null || req.getName().isBlank()) {
-                send(new AddItemResponse("Tên item không được để trống", req.getSessionId(),
-                        false, -1, -1, null));
-                return;
-            }
-            if (req.getType() == null) {
-                send(new AddItemResponse("Loại item không hợp lệ", req.getSessionId(),
-                        false, -1, -1, null));
-                return;
-            }
-            if (req.getStartingPrice() == null
-                    || req.getStartingPrice().compareTo(java.math.BigDecimal.ZERO) <= 0) {
-                send(new AddItemResponse("Giá khởi điểm phải lớn hơn 0", req.getSessionId(),
-                        false, -1, -1, null));
-                return;
-            }
-            if (req.getStartTime() == null || req.getEndTime() == null
-                    || !req.getStartTime().isBefore(req.getEndTime())) {
-                send(new AddItemResponse("Thời gian đấu giá không hợp lệ", req.getSessionId(),
-                        false, -1, -1, null));
-                return;
-            }
-
-            // 4. Decode ảnh Base64 → byte[]
-            byte[] imageBytes = null;
-            if (req.getImageBase64() != null && !req.getImageBase64().isBlank()) {
-                try {
-                    imageBytes = java.util.Base64.getDecoder().decode(req.getImageBase64());
-                } catch (IllegalArgumentException e) {
-                    send(new AddItemResponse("Dữ liệu ảnh không hợp lệ", req.getSessionId(),
-                            false, -1, -1, null));
-                    return;
-                }
-            }
-
-            // 5. Tạo Item qua ItemService (Factory pattern)
-            com.btl.n8.Model.Entity.Item item = itemService.createItem(
-                    req.getName(),
-                    req.getType().name(),
-                    req.getSellerId(),
-                    imageBytes
-            );
+            Item item = itemService.createItem(
+                    req.getName(), req.getType().name(),
+                    req.getSellerId(), imageBytes);
             boolean itemOk = itemService.addItem(item);
-            if (!itemOk) {
-                send(new AddItemResponse("Không thể tạo item", req.getSessionId(),
-                        false, -1, -1, null));
-                return;
-            }
+            if (!itemOk) { send(new AddItemResponse("Tạo item thất bại", req.getSessionId(), false, -1, -1, null)); return; }
 
-            // 6. Tạo Auction qua AuctionService
-            com.btl.n8.Model.Entity.Auction auction = new com.btl.n8.Model.Entity.Auction(
-                    0, item.getId(),
+            Auction auction = new Auction(0, item.getId(),
                     req.getStartingPrice(), req.getStartingPrice(),
-                    req.getStartTime(), req.getEndTime(),
-                    com.btl.n8.Model.Enums.AuctionStatus.OPEN
-            );
+                    req.getStartTime(), req.getEndTime(), AuctionStatus.OPEN);
             boolean auctionOk = auctionService.createAuction(auction);
-            if (!auctionOk) {
-                // Rollback: xóa item vừa tạo
-                itemService.deleteItemById(item.getId());
-                send(new AddItemResponse("Không thể tạo phiên đấu giá", req.getSessionId(),
-                        false, -1, item.getId(), null));
-                return;
-            }
 
-            // 7. Lấy auctionId vừa insert để trả về
-            com.btl.n8.Model.Entity.Auction created =
-                    auctionService.getAuctionByItemId(item.getId());
-            int auctionId = created != null ? created.getId() : -1;
-
-            send(new AddItemResponse("Đăng bán thành công", req.getSessionId(),
-                    true, auctionId, item.getId(), req.getEndTime()));
-
-            System.out.println("[ADD_ITEM] seller=" + user.getAccount()
-                    + " item=" + item.getName()
-                    + " itemId=" + item.getId()
-                    + " auctionId=" + auctionId);
-
+            send(new AddItemResponse(
+                    auctionOk ? "Đăng bán thành công" : "Tạo đấu giá thất bại",
+                    req.getSessionId(), auctionOk,
+                    auction.getId(), item.getId(), req.getEndTime()));
         } catch (AuthenticationException e) {
-            System.err.println("[AuthenticationException] " + e.getMessage());
             send(new AddItemResponse(e.getMessage(), null, false, -1, -1, null));
-        } catch (Exception e) {
-            System.err.println("[handleAddItem] Unexpected error: " + e.getMessage());
-            e.printStackTrace();
-            send(new AddItemResponse("Lỗi hệ thống: " + e.getMessage(),
-                    req.getSessionId(), false, -1, -1, null));
         }
     }
 
@@ -501,5 +425,169 @@ public class RequestHandler {
     private void broadcastAll(String json) {
         System.out.println("[BROADCAST] tới " + clients.size() + " clients: " + json.substring(0, Math.min(80, json.length())));
         for (ClientHandler c : clients.values()) c.send(json);
+    }
+
+    // ── DEPOSIT ───────────────────────────────────────────────────────────────────
+    public void handleDeposit(DepositRequest req) {
+        try {
+            User user = ServerSessionManager.getInstance().getUser(req.getSessionId());
+            if (user == null) throw new AuthenticationException("Chưa đăng nhập");
+
+            BigDecimal current = user.getBalance() != null ? user.getBalance() : BigDecimal.ZERO;
+            BigDecimal newBal  = current.add(req.getAmount());
+            user.setBalance(newBal);
+            boolean ok = userService.updateUser(user);
+            send(new DepositResponse(
+                    ok ? "Nạp tiền thành công" : "Nạp tiền thất bại",
+                    req.getSessionId(), ok, ok ? newBal : current));
+        } catch (AuthenticationException e) {
+            send(new DepositResponse(e.getMessage(), null, false, BigDecimal.ZERO));
+        }
+    }
+
+    // ── UPGRADE_SELLER ────────────────────────────────────────────────────────────
+    public void handleUpgradeSeller(UpgradeSellerRequest req) {
+        try {
+            User user = ServerSessionManager.getInstance().getUser(req.getSessionId());
+            if (user == null) throw new AuthenticationException("Chưa đăng nhập");
+
+            boolean ok = userService.upgradeToSeller(req.getUserId());
+            User updated = ok ? userService.getUserById(req.getUserId()) : null;
+            if (ok && updated != null)
+                ServerSessionManager.getInstance().updateUser(req.getSessionId(), updated);
+
+            send(new UpgradeSellerResponse(
+                    ok ? "Nâng cấp thành công" : "Nâng cấp thất bại",
+                    req.getSessionId(), ok, updated));
+        } catch (AuthenticationException e) {
+            send(new UpgradeSellerResponse(e.getMessage(), null, false, null));
+        }
+    }
+
+    // ── GET_USER_BIDS ─────────────────────────────────────────────────────────────
+    public void handleGetUserBids(GetUserBidsRequest req) {
+        try {
+            User user = ServerSessionManager.getInstance().getUser(req.getSessionId());
+            if (user == null) throw new AuthenticationException("Chưa đăng nhập");
+
+            List<Bid> bids = bidService.getBidsByBidder(req.getUserId());
+            send(new GetUserBidsResponse("OK", req.getSessionId(), true, bids));
+        } catch (AuthenticationException e) {
+            send(new GetUserBidsResponse(e.getMessage(), null, false, null));
+        }
+    }
+
+    // ── GET_SELLER_ITEMS ──────────────────────────────────────────────────────────
+    public void handleGetSellerItems(GetSellerItemsRequest req) {
+        try {
+            User user = ServerSessionManager.getInstance().getUser(req.getSessionId());
+            if (user == null) throw new AuthenticationException("Chưa đăng nhập");
+
+            List<Item>    items    = itemService.getItemsBySeller(req.getSellerId());
+            List<Auction> auctions = items.stream()
+                    .map(item -> auctionService.getAuctionByItemId(item.getId()))
+                    .filter(a -> a != null)
+                    .collect(java.util.stream.Collectors.toList());
+
+            send(new GetSellerItemsResponse("OK", req.getSessionId(), true, items, auctions));
+        } catch (AuthenticationException e) {
+            send(new GetSellerItemsResponse(e.getMessage(), null, false, null, null));
+        }
+    }
+
+    // ── GET_AUCTION_LIST ──────────────────────────────────────────────────────────
+    public void handleGetAuctionList(GetAuctionListRequest req) {
+        try {
+            User user = ServerSessionManager.getInstance().getUser(req.getSessionId());
+            if (user == null) throw new AuthenticationException("Chưa đăng nhập");
+
+            // Đóng các auction hết giờ và lấy danh sách qua AuctionService (không gọi DAO trực tiếp)
+            List<com.btl.n8.DTO.ItemAuctionRow> joined = auctionService.getAuctionList();
+
+            List<GetAuctionListResponse.AuctionRow> rows = joined.stream()
+                    .map(r -> new GetAuctionListResponse.AuctionRow(
+                            r.itemId, r.itemName, r.itemType,
+                            r.currentPrice, r.status, r.auctionId, r.sellerId))
+                    .collect(java.util.stream.Collectors.toList());
+
+            send(new GetAuctionListResponse("OK", req.getSessionId(), true, rows));
+        } catch (AuthenticationException e) {
+            send(new GetAuctionListResponse(e.getMessage(), null, false, null));
+        }
+    }
+
+    // ── GET_AUCTION_DETAIL ────────────────────────────────────────────────────────
+    public void handleGetAuctionDetail(GetAuctionDetailRequest req) {
+        try {
+            User user = ServerSessionManager.getInstance().getUser(req.getSessionId());
+            if (user == null) throw new AuthenticationException("Chưa đăng nhập");
+
+            Auction auction  = auctionService.getAuctionById(req.getAuctionId());
+            List<Bid> bids   = bidService.getBidsByAuction(req.getAuctionId());
+
+            send(new GetAuctionDetailResponse("OK", req.getSessionId(),
+                    auction != null, auction, bids));
+        } catch (AuthenticationException e) {
+            send(new GetAuctionDetailResponse(e.getMessage(), null, false, null, null));
+        }
+    }
+
+    // ── ADMIN_* ───────────────────────────────────────────────────────────────────
+    public void handleAdmin(AdminRequest req) {
+        try {
+            User user = ServerSessionManager.getInstance().getUser(req.getSessionId());
+            if (user == null) throw new AuthenticationException("Chưa đăng nhập");
+            if (user.getRole() != com.btl.n8.Model.Enums.Role.ADMIN)
+                throw new AuthenticationException("Không có quyền Admin");
+
+            AdminService adminService = ServiceFactory
+                    .createAdminService(conn);
+            String sid = req.getSessionId();
+
+            switch (req.getAction()) {
+                case "ADMIN_GET_DASHBOARD" -> send(new AdminResponse(
+                        "ADMIN_RESULT", "OK", sid, true).withDashboard(
+                        adminService.getTotalUsers(), adminService.getTotalAuctions(),
+                        adminService.getOpenAuctionCount(), adminService.getTotalItems(),
+                        adminService.getTotalSellers(), adminService.getCancelledAuctionCount()));
+
+                case "ADMIN_GET_USERS"     -> send(new AdminResponse(
+                        "ADMIN_RESULT", "OK", sid, true)
+                        .withUsers(adminService.getAllUsers()));
+
+                case "ADMIN_GET_AUCTIONS"  -> send(new AdminResponse(
+                        "ADMIN_RESULT", "OK", sid, true)
+                        .withAuctions(adminService.getAllAuctions()));
+
+                case "ADMIN_GET_ITEMS"     -> send(new AdminResponse(
+                        "ADMIN_RESULT", "OK", sid, true)
+                        .withItems(adminService.getAllItems()));
+
+                case "ADMIN_UPGRADE_USER"  -> { adminService.upgradeUserToSeller(req.getTargetId());
+                    send(new AdminResponse("ADMIN_RESULT", "OK", sid, true)); }
+
+                case "ADMIN_DEMOTE_USER"   -> { adminService.demoteSellerToBidder(req.getTargetId());
+                    send(new AdminResponse("ADMIN_RESULT", "OK", sid, true)); }
+
+                case "ADMIN_DELETE_USER"   -> { adminService.deleteUserById(req.getTargetId());
+                    send(new AdminResponse("ADMIN_RESULT", "OK", sid, true)); }
+
+                case "ADMIN_CLOSE_AUCTION" -> { adminService.closeAuction(req.getTargetId());
+                    send(new AdminResponse("ADMIN_RESULT", "OK", sid, true)); }
+
+                case "ADMIN_CANCEL_AUCTION"-> { adminService.cancelAuction(req.getTargetId());
+                    send(new AdminResponse("ADMIN_RESULT", "OK", sid, true)); }
+
+                case "ADMIN_DELETE_AUCTION"-> { adminService.deleteAuctionById(req.getTargetId());
+                    send(new AdminResponse("ADMIN_RESULT", "OK", sid, true)); }
+
+                case "ADMIN_DELETE_ITEM"   -> { adminService.deleteItemById(req.getTargetId());
+                    send(new AdminResponse("ADMIN_RESULT", "OK", sid, true)); }
+
+                default -> send(new AdminResponse("ADMIN_RESULT", "Unknown action", sid, false));
+            }
+        } catch (AuthenticationException e) {
+            send(new AdminResponse("ADMIN_RESULT", e.getMessage(), null, false));
+        }
     }
 }

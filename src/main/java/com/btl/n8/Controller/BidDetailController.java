@@ -1,16 +1,14 @@
 package com.btl.n8.Controller;
 
-import com.btl.n8.Connection.*;
+import com.btl.n8.DTO.*;
 import com.btl.n8.Model.Entity.Auction;
 import com.btl.n8.Model.Entity.Bid;
-import com.btl.n8.Model.Entity.Item;
+import com.btl.n8.Model.Entity.User;
 import com.btl.n8.Model.Enums.AuctionStatus;
-import com.btl.n8.Service.AuctionService;
-import com.btl.n8.Service.BidService;
-import com.btl.n8.DTO.BidRequest;
-import com.btl.n8.DTO.BidResponse;
 import com.btl.n8.Network.ClientSocket;
 import com.btl.n8.Network.ServerResponseListener;
+import com.btl.n8.Service.BidDetailControllerService;
+import com.btl.n8.Util.LocalDateTimeAdapter;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
@@ -24,20 +22,14 @@ import javafx.scene.chart.CategoryAxis;
 import javafx.scene.chart.LineChart;
 import javafx.scene.chart.NumberAxis;
 import javafx.scene.chart.XYChart;
-import javafx.scene.control.Alert;
-import javafx.scene.control.Button;
-import javafx.scene.control.Label;
-import javafx.scene.control.TextField;
-import javafx.scene.image.Image;
+import javafx.scene.control.*;
 import javafx.scene.image.ImageView;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
-import com.btl.n8.Util.LocalDateTimeAdapter;
 
-import java.time.LocalDateTime;
 import java.math.BigDecimal;
-import java.sql.Connection;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Timer;
@@ -46,39 +38,36 @@ import java.util.TimerTask;
 public class BidDetailController implements ServerResponseListener {
 
     @FXML private ImageView itemImage;
-    @FXML private Label itemName;
-    @FXML private Label itemId;
-    @FXML private Label itemType;
-    @FXML private Label itemStatus;
-    @FXML private Label currentPrice;
-    @FXML private Label timerLabel;
-    @FXML private Label bidMsg;
+    @FXML private Label     itemName;
+    @FXML private Label     itemId;
+    @FXML private Label     itemType;
+    @FXML private Label     itemStatus;
+    @FXML private Label     currentPrice;
+    @FXML private Label     timerLabel;
+    @FXML private Label     bidMsg;
     @FXML private TextField bidInput;
     @FXML private LineChart<String, Number> bidChart;
     @FXML private CategoryAxis xAxis;
-    @FXML private NumberAxis yAxis;
+    @FXML private NumberAxis   yAxis;
     @FXML private Button autoBidButton;
-    // FIX: dùng closeBtn (thay vì bidInput) để lấy window trong handleClose
     @FXML private Button closeBtn;
 
-    private int auctionId;
-    private int bidderId;
+    private int     auctionId;
+    private int     bidderId;
     private Auction auction;
-    private Item item;
-    private Timer countdownTimer;
+    private Timer   countdownTimer;
+
+    private Stage             autoBidStage;
+    private AutoBidController autoBidCtrl;
+
+    /** Service xử lý toàn bộ logic nghiệp vụ — Controller chỉ cập nhật UI */
+    private final BidDetailControllerService service = new BidDetailControllerService();
 
     private static final Gson gson = new GsonBuilder()
             .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
             .create();
 
     private static final int SNIPE_EXTENSION_SECONDS = 30;
-
-    private AuctionService auctionService;
-    private BidService bidService;
-
-    // ── AutoBid popup state ───────────────────────────────────────────────────
-    private Stage             autoBidStage;
-    private AutoBidController autoBidCtrl;
 
     private static final String STYLE_DEFAULT =
             "-fx-background-color: #0f2035; -fx-text-fill: #ffd700; " +
@@ -90,92 +79,226 @@ public class BidDetailController implements ServerResponseListener {
                     "-fx-border-color: #ff6b6b; -fx-border-radius: 6; " +
                     "-fx-background-radius: 6; -fx-cursor: hand; -fx-border-width: 1.5;";
 
-    // ── Init ──────────────────────────────────────────────────────────────────
+    // ── Init ─────────────────────────────────────────────────────────────────
 
-    public void initData(int auctionId, Item item) {
+    /**
+     * Khởi tạo dữ liệu cho màn hình chi tiết đấu giá.
+     *
+     * @param auctionId ID của auction cần hiển thị
+     * @param auction   Auction object nhận từ server (có thể null nếu chưa load)
+     */
+    public void initData(int auctionId, Auction auction) {
         this.auctionId = auctionId;
         this.bidderId  = SessionManager.getInstance().getCurrentUser().getId();
-        this.item      = item;
+        this.auction   = auction;
 
-        itemName.setText(item.getName());
-        itemId.setText("#" + item.getId());
-        itemType.setText(item.getType().name());
+        // Hiển thị trạng thái ban đầu
+        itemName.setText("Auction #" + auctionId);
+        itemId.setText("#" + auctionId);
+        itemType.setText("-");
         timerLabel.setText("Loading...");
-        currentPrice.setText("Loading...");
-        itemStatus.setText("-");
         bidInput.setDisable(true);
 
-        if (item.getImage() != null && item.getImage().length > 0) {
-            try {
-                Image img = new Image(new java.io.ByteArrayInputStream(item.getImage()));
-                itemImage.setImage(img);
-            } catch (Exception e) {
-                System.out.println("Không load được ảnh item");
-            }
-        }
-
         ClientSocket.getInstance().addListener(this);
-
         AutoBidManager.getInstance().setUICallback(auctionId, this::handleAutoBidManagerEvent);
 
         if (AutoBidManager.getInstance().isActive(auctionId)) {
             setAutoBidButtonActive();
         }
 
-        new Thread(() -> {
-            try {
-                Connection conn = DataConnection.getConnection();
-                if (conn == null) throw new Exception("Database connection failed");
-
-                auctionService = new AuctionService(new AuctionDAOImpl(conn));
-                bidService     = new BidService(new BidDAOImpl(conn));
-                Auction loaded = auctionService.getAuctionById(auctionId);
-
-                Platform.runLater(() -> {
-                    auction = loaded;
-                    AutoBidManager.getInstance().updateAuction(auctionId, auction);
-                    updateAuctionStatus();
-                    loadChart();
-
-                    if (auction != null) {
-                        if (LocalDateTime.now().isAfter(auction.getEndTime())) {
-                            bidInput.setDisable(true);
-                            timerLabel.setText("Ended");
-                            reloadAuction();
-                        } else {
-                            startCountdown(auction.getEndTime());
-                        }
-                    }
-                });
-
-            } catch (Exception e) {
-                Platform.runLater(() -> {
-                    showMsg("Failed to load data. Please try again.", false);
-                    timerLabel.setText("Error");
-                });
-                e.printStackTrace();
-            }
-        }).start();
+        // Lấy chi tiết auction + bid history qua service
+        String sessionId = SessionManager.getInstance().getSessionId();
+        service.requestAuctionDetail(sessionId, auctionId);
     }
 
-    // ── AutoBidManager event handler ──────────────────────────────────────────
+    // ── ServerResponseListener ────────────────────────────────────────────────
 
-    private void handleAutoBidManagerEvent(String event) {
-        if (event == null) return;
-        String[] parts = event.split(":", 2);
-        String   type  = parts[0];
-        String   msg   = parts.length > 1 ? parts[1] : "";
+    @Override
+    public void onRespone(JsonObject response) {
+        if (!response.has("action")) return;
+        String action = response.get("action").getAsString();
 
-        switch (type) {
-            case "CANCELLED" -> {
-                setAutoBidButtonDefault();
-                showMsg("AutoBid đã huỷ.", false);
-            }
-            case "STOPPED" -> {
-                setAutoBidButtonDefault();
-                showMsg("🤖 " + (msg.isEmpty() ? "AutoBid đã dừng." : msg), false);
-            }
+        switch (action) {
+            case "AUCTION_DETAIL_RESULT" -> handleDetailResult(response);
+            case "BID_UPDATE"            -> handleBidUpdate(response);
+            case "AUCTION_SETTLED"       -> handleSettled(response);
         }
+    }
+
+    // ── Xử lý response từ server ──────────────────────────────────────────────
+
+    private void handleDetailResult(JsonObject json) {
+        GetAuctionDetailResponse res = gson.fromJson(json, GetAuctionDetailResponse.class);
+        if (!res.isSuccess() || res.getAuction() == null) {
+            Platform.runLater(() -> {
+                timerLabel.setText("Error");
+                showMsg("Không tải được dữ liệu phiên đấu giá", false);
+            });
+            return;
+        }
+
+        Platform.runLater(() -> {
+            this.auction = res.getAuction();
+            AutoBidManager.getInstance().updateAuction(auctionId, auction);
+
+            updateAuctionStatus();
+            loadChartFromBids(res.getBidHistory());
+
+            if (auction != null) {
+                if (LocalDateTime.now().isAfter(auction.getEndTime())) {
+                    bidInput.setDisable(true);
+                    timerLabel.setText("Ended");
+                } else {
+                    startCountdown(auction.getEndTime());
+                }
+            }
+        });
+    }
+
+    private void handleBidUpdate(JsonObject json) {
+        BidResponse res = gson.fromJson(json, BidResponse.class);
+        // Dùng service để kiểm tra — không tự so sánh trong controller
+        if (!service.isCurrentAuction(res.getAuctionId(), this.auctionId)) return;
+
+        Platform.runLater(() -> {
+            if (res.isSuccess()) {
+                currentPrice.setText(service.formatMoney(res.getCurrentPrice()));
+                if (auction != null) {
+                    auction.setCurrentPrice(res.getCurrentPrice());
+                    AutoBidManager.getInstance().updateAuction(auctionId, auction);
+                }
+                if (res.getNewEndTime() != null && auction != null) {
+                    auction.setEndTime(res.getNewEndTime());
+                    AutoBidManager.getInstance().updateAuction(auctionId, auction);
+                    if (countdownTimer != null) countdownTimer.cancel();
+                    startCountdown(res.getNewEndTime());
+                    showMsg("⏰ Anti-snipe! Gia hạn thêm " + SNIPE_EXTENSION_SECONDS + "s", true);
+                } else {
+                    // Dùng service để kiểm tra bid có phải của mình không
+                    boolean isMyBid = service.isMyBid(res.getBidderId(), bidderId);
+                    showMsg(isMyBid
+                            ? "✓ Your bid was placed!"
+                            : "⚡ Someone placed: " + service.formatMoney(res.getCurrentPrice()),
+                            true);
+                }
+                // Reload bid history qua service
+                reloadBidHistory();
+            } else {
+                if (auction != null && res.getCurrentPrice() != null) {
+                    currentPrice.setText(service.formatMoney(res.getCurrentPrice()));
+                    auction.setCurrentPrice(res.getCurrentPrice());
+                }
+                String msg = res.getMessage() != null ? res.getMessage() : "Bid failed";
+                showMsg(msg, false);
+                if (msg.contains("kết thúc") || msg.contains("đóng") ||
+                        msg.contains("ended")    || msg.contains("closed")) {
+                    bidInput.setDisable(true);
+                    timerLabel.setText("Ended");
+                    if (auction != null) {
+                        auction.setStatus(AuctionStatus.CLOSED);
+                        updateAuctionStatus();
+                    }
+                }
+            }
+        });
+    }
+
+    private void handleSettled(JsonObject json) {
+        AuctionSettledResponse settled = gson.fromJson(json, AuctionSettledResponse.class);
+        // Dùng service để kiểm tra — không tự so sánh trong controller
+        if (!service.isCurrentAuction(settled.getAuctionId(), this.auctionId)) return;
+
+        Platform.runLater(() -> {
+            if (countdownTimer != null) countdownTimer.cancel();
+            bidInput.setDisable(true);
+            timerLabel.setText("Ended");
+            if (auction != null) {
+                auction.setStatus(AuctionStatus.CLOSED);
+                updateAuctionStatus();
+            }
+
+            // Cập nhật balance nếu thắng — dùng service
+            if (settled.isWinner() && settled.getNewBalance() != null) {
+                User me = SessionManager.getInstance().getCurrentUser();
+                if (me != null) {
+                    service.applyWinnerBalance(me, settled.getNewBalance());
+                    SessionManager.getInstance().setCurrentUser(me);
+                }
+            } else {
+                // Reload user từ server để cập nhật frozen balance
+                String sessionId = SessionManager.getInstance().getSessionId();
+                int userId = SessionManager.getInstance().getCurrentUser().getId();
+                service.requestUserInfo(sessionId, userId);
+            }
+
+            if (settled.getWinnerId() == -1) {
+                showSettledDialog("Phiên đấu giá kết thúc",
+                        "Không có người tham gia đặt giá.", false);
+            } else if (settled.isWinner()) {
+                showSettledDialog("🏆 Bạn đã thắng!",
+                        String.format("Chúc mừng! Bạn thắng với giá %s.\nBalance đã bị trừ tự động.",
+                                service.formatMoney(settled.getWinningPrice())), true);
+            } else {
+                showSettledDialog("Phiên đấu giá kết thúc",
+                        String.format("Người thắng: %s\nGiá thắng: %s",
+                                settled.getWinnerAccount(),
+                                service.formatMoney(settled.getWinningPrice())), false);
+            }
+        });
+    }
+
+    // ── Reload bid history ────────────────────────────────────────────────────
+
+    private void reloadBidHistory() {
+        String sessionId = SessionManager.getInstance().getSessionId();
+        service.requestAuctionDetail(sessionId, auctionId);
+    }
+
+    // ── Chart ─────────────────────────────────────────────────────────────────
+
+    private void loadChartFromBids(List<Bid> bids) {
+        if (bids == null) return;
+        XYChart.Series<String, Number> series = new XYChart.Series<>();
+        series.setName("Price");
+        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("HH:mm:ss");
+        for (int i = 0; i < bids.size(); i++) {
+            Bid bid = bids.get(i);
+            String label = (i + 1) + " " + bid.getBidTime().format(fmt);
+            series.getData().add(new XYChart.Data<>(label, bid.getAmount()));
+        }
+        bidChart.getData().clear();
+        bidChart.getData().add(series);
+    }
+
+    // ── Place bid ─────────────────────────────────────────────────────────────
+
+    @FXML
+    public void handlePlaceBid() {
+        bidMsg.setText("");
+        String text = bidInput.getText().trim();
+
+        User me = SessionManager.getInstance().getCurrentUser();
+
+        // Uỷ thác toàn bộ validation cho service
+        BidDetailControllerService.BidValidationResult result =
+                service.validateBid(text, auction, me);
+
+        if (!result.valid) {
+            showMsg(result.errorMessage, false);
+            // Nếu auction đã kết thúc, cập nhật trạng thái
+            if (auction != null && (result.errorMessage.contains("ended") ||
+                    result.errorMessage.contains("not open"))) {
+                auction.setStatus(AuctionStatus.CLOSED);
+                updateAuctionStatus();
+            }
+            return;
+        }
+
+        // Gửi bid qua service
+        service.sendBidRequest(auctionId, bidderId, result.amount,
+                SessionManager.getInstance().getSessionId());
+        bidInput.clear();
+        showMsg("Bid sent...", true);
     }
 
     // ── Auction status ────────────────────────────────────────────────────────
@@ -187,10 +310,8 @@ public class BidDetailController implements ServerResponseListener {
             bidInput.setDisable(true);
             return;
         }
-
-        currentPrice.setText(fmt(auction.getCurrentPrice()));
+        currentPrice.setText(service.formatMoney(auction.getCurrentPrice()));
         itemStatus.setText(auction.getStatus().name());
-
         switch (auction.getStatus()) {
             case OPEN -> {
                 itemStatus.setStyle("-fx-background-color: #00ff88; -fx-text-fill: #0a1628; " +
@@ -208,222 +329,6 @@ public class BidDetailController implements ServerResponseListener {
                 bidInput.setDisable(true);
             }
         }
-    }
-
-    private void reloadAuction() {
-        new Thread(() -> {
-            Auction updated = auctionService.getAuctionById(auctionId);
-            Platform.runLater(() -> {
-                auction = updated;
-                AutoBidManager.getInstance().updateAuction(auctionId, auction);
-                updateAuctionStatus();
-            });
-        }).start();
-    }
-
-    /**
-     * FIX: bids đã được query theo bid_time ASC nên dùng thẳng thứ tự đó,
-     * không đảo ngược vòng lặp nữa → chart hiển thị đúng tiến trình theo thời gian.
-     */
-    private void loadChart() {
-        new Thread(() -> {
-            List<Bid> bids = bidService.getBidsByAuction(auctionId);
-            XYChart.Series<String, Number> series = new XYChart.Series<>();
-            series.setName("Price");
-            DateTimeFormatter fmt = DateTimeFormatter.ofPattern("HH:mm:ss");
-            // Dùng "#index time" làm label để:
-            //   1. Không bao giờ trùng label dù 2 bid cùng giây
-            //   2. CategoryAxis giữ đúng thứ tự insert (trái → phải = cũ → mới)
-            for (int i = 0; i < bids.size(); i++) {
-                Bid bid = bids.get(i);
-                String label = (i + 1) + " " + bid.getBidTime().format(fmt);
-                series.getData().add(new XYChart.Data<>(label, bid.getAmount()));
-            }
-            Platform.runLater(() -> {
-                bidChart.getData().clear();
-                bidChart.getData().add(series);
-            });
-        }).start();
-    }
-
-    // ── Bid ───────────────────────────────────────────────────────────────────
-
-    @FXML
-    public void handlePlaceBid() {
-        bidMsg.setText("");
-        String text = bidInput.getText().trim();
-        if (text.isEmpty()) { showMsg("Please enter a bid amount", false); return; }
-
-        BigDecimal amount;
-        try {
-            amount = new BigDecimal(text);
-            if (amount.compareTo(BigDecimal.ZERO) <= 0) {
-                showMsg("Amount must be positive", false); return;
-            }
-        } catch (NumberFormatException e) {
-            showMsg("Invalid amount format", false); return;
-        }
-
-        new Thread(() -> {
-            Auction latest = auctionService.getAuctionById(auctionId);
-            Platform.runLater(() -> {
-                auction = latest;
-                AutoBidManager.getInstance().updateAuction(auctionId, auction);
-
-                if (auction == null) { showMsg("Auction not available", false); return; }
-                if (LocalDateTime.now().isAfter(auction.getEndTime())) {
-                    auction.setStatus(AuctionStatus.CLOSED);
-                    updateAuctionStatus();
-                    timerLabel.setText("Ended");
-                    showMsg("Auction has ended!", false);
-                    return;
-                }
-                if (auction.getStatus() != AuctionStatus.OPEN) {
-                    updateAuctionStatus();
-                    showMsg("Auction is not open!", false);
-                    return;
-                }
-                if (amount.compareTo(auction.getCurrentPrice()) <= 0) {
-                    showMsg("Bid must be higher than " + fmt(auction.getCurrentPrice()), false);
-                    return;
-                }
-
-                // [FIX] Kiểm tra balance phía client dùng getAvailableBalance() thay vì getBalance()
-                // getAvailableBalance() = balance - frozenBalance (tiền đang bị khóa ở các auction khác)
-                // Điều này khớp với logic kiểm tra phía server, tránh false-positive "đủ tiền"
-                // rồi server từ chối và client bị confused trạng thái.
-                com.btl.n8.Model.Entity.User me = SessionManager.getInstance().getCurrentUser();
-                java.math.BigDecimal available = (me != null)
-                        ? me.getAvailableBalance()
-                        : java.math.BigDecimal.ZERO;
-                if (amount.compareTo(available) > 0) {
-                    java.math.BigDecimal frozen = (me != null) ? me.getFrozenBalance() : BigDecimal.ZERO;
-                    showMsg(String.format(
-                            "Số dư khả dụng không đủ! Khả dụng: %s (đang khóa: %s) — Cần: %s",
-                            fmt(available), fmt(frozen), fmt(amount)), false);
-                    return;
-                }
-
-                currentPrice.setText(fmt(amount));
-                auction.setCurrentPrice(amount);
-
-                new Thread(() -> {
-                    BidRequest req = new BidRequest(auctionId, bidderId, amount);
-                    req.setSessionId(SessionManager.getInstance().getSessionId());
-                    ClientSocket.getInstance().sendMessage(req);
-                }).start();
-
-                bidInput.clear();
-                showMsg("Bid sent...", true);
-            });
-        }).start();
-    }
-
-    // ── Socket listener ───────────────────────────────────────────────────────
-
-    @Override
-    public void onRespone(JsonObject response) {
-        if (!response.has("action")) return;
-        String action = response.get("action").getAsString();
-
-        if ("AUCTION_SETTLED".equals(action)) {
-            com.btl.n8.DTO.AuctionSettledResponse settled =
-                    gson.fromJson(response, com.btl.n8.DTO.AuctionSettledResponse.class);
-            if (settled.getAuctionId() != this.auctionId) return;
-
-            Platform.runLater(() -> {
-                if (countdownTimer != null) countdownTimer.cancel();
-                bidInput.setDisable(true);
-                timerLabel.setText("Ended");
-                if (auction != null) {
-                    auction.setStatus(AuctionStatus.CLOSED);
-                    updateAuctionStatus();
-                }
-
-                // Cập nhật balance trong SessionManager:
-                // - Nếu thắng: server gửi newBalance mới → dùng luôn
-                // - Nếu thua: reload từ DB để cập nhật frozenBalance đã được unfreeze
-                if (settled.isWinner() && settled.getNewBalance() != null) {
-                    com.btl.n8.Model.Entity.User me = SessionManager.getInstance().getCurrentUser();
-                    if (me != null) {
-                        me.setBalance(settled.getNewBalance());
-                        me.setFrozenBalance(BigDecimal.ZERO); // frozen đã được giải phóng
-                        SessionManager.getInstance().setCurrentUser(me);
-                    }
-                } else {
-                    // Reload user từ DB trên background thread (cập nhật frozen đã được unfreeze)
-                    new Thread(() -> {
-                        try {
-                            com.btl.n8.Model.Entity.User updated =
-                                    new UserDAOImpl(DataConnection.getConnection())
-                                            .findById(SessionManager.getInstance().getCurrentUser().getId());
-                            if (updated != null) {
-                                Platform.runLater(() ->
-                                        SessionManager.getInstance().setCurrentUser(updated));
-                            }
-                        } catch (Exception ignored) {}
-                    }).start();
-                }
-
-                if (settled.getWinnerId() == -1) {
-                    showSettledDialog("Phiên đấu giá kết thúc",
-                            "Không có người tham gia đặt giá.", false);
-                } else if (settled.isWinner()) {
-                    showSettledDialog("🏆 Bạn đã thắng!",
-                            String.format("Chúc mừng! Bạn thắng với giá %s.\nBalance đã bị trừ tự động.",
-                                    fmt(settled.getWinningPrice())), true);
-                } else {
-                    showSettledDialog("Phiên đấu giá kết thúc",
-                            String.format("Người thắng: %s\nGiá thắng: %s",
-                                    settled.getWinnerAccount(),
-                                    fmt(settled.getWinningPrice())), false);
-                }
-            });
-            return;
-        }
-
-        if (!"BID_UPDATE".equals(action)) return;
-
-        BidResponse res = gson.fromJson(response, BidResponse.class);
-        if (res.getAuctionId() != this.auctionId) return;
-
-        Platform.runLater(() -> {
-            if (res.isSuccess()) {
-                currentPrice.setText(fmt(res.getCurrentPrice()));
-                if (auction != null) {
-                    auction.setCurrentPrice(res.getCurrentPrice());
-                    AutoBidManager.getInstance().updateAuction(auctionId, auction);
-                }
-
-                if (res.getNewEndTime() != null && auction != null) {
-                    auction.setEndTime(res.getNewEndTime());
-                    AutoBidManager.getInstance().updateAuction(auctionId, auction);
-                    if (countdownTimer != null) countdownTimer.cancel();
-                    startCountdown(res.getNewEndTime());
-                    showMsg("⏰ Anti-snipe! Gia hạn thêm " + SNIPE_EXTENSION_SECONDS + "s", true);
-                } else {
-                    showMsg(res.getBidderId() != bidderId
-                            ? "⚡ Someone placed: " + fmt(res.getCurrentPrice())
-                            : "✓ Your bid was placed!", true);
-                }
-                if (bidService != null) loadChart();
-            } else {
-                if (auction != null) {
-                    currentPrice.setText(fmt(res.getCurrentPrice()));
-                    auction.setCurrentPrice(res.getCurrentPrice());
-                }
-                String msg = res.getMessage() != null ? res.getMessage() : "Bid failed";
-                showMsg(msg, false);
-                if (msg.contains("kết thúc") || msg.contains("đóng") || msg.contains("ended") || msg.contains("closed")) {
-                    bidInput.setDisable(true);
-                    timerLabel.setText("Ended");
-                    if (auction != null) {
-                        auction.setStatus(AuctionStatus.CLOSED);
-                        updateAuctionStatus();
-                    }
-                }
-            }
-        });
     }
 
     // ── Countdown ─────────────────────────────────────────────────────────────
@@ -444,73 +349,61 @@ public class BidDetailController implements ServerResponseListener {
                         }
                         showMsg("Auction has ended!", false);
                     });
-                    new Thread(() -> {
-                        if (auctionService != null) {
-                            Auction updated = auctionService.getAuctionById(auctionId);
-                            Platform.runLater(() -> {
-                                auction = updated;
-                                AutoBidManager.getInstance().updateAuction(auctionId, auction);
-                                updateAuctionStatus();
-                            });
-                        }
-                    }).start();
                     countdownTimer.cancel();
                     return;
                 }
                 long h = diff / 3600, m = (diff % 3600) / 60, s = diff % 60;
-                Platform.runLater(() -> timerLabel.setText(String.format("%02d:%02d:%02d", h, m, s)));
+                Platform.runLater(() -> timerLabel.setText(
+                        String.format("%02d:%02d:%02d", h, m, s)));
             }
         }, 0, 1000);
     }
 
-    // ── AutoBid popup ─────────────────────────────────────────────────────────
+    // ── AutoBid ───────────────────────────────────────────────────────────────
+
+    private void handleAutoBidManagerEvent(String event) {
+        if (event == null) return;
+        String[] parts = event.split(":", 2);
+        String type = parts[0], msg = parts.length > 1 ? parts[1] : "";
+        switch (type) {
+            case "CANCELLED" -> { setAutoBidButtonDefault(); showMsg("AutoBid đã huỷ.", false); }
+            case "STOPPED"   -> { setAutoBidButtonDefault();
+                showMsg("🤖 " + (msg.isEmpty() ? "AutoBid đã dừng." : msg), false); }
+        }
+    }
 
     @FXML
     public void handleOpenAutoBid() {
         if (autoBidStage != null && autoBidStage.isShowing()) {
-            autoBidStage.requestFocus();
-            return;
+            autoBidStage.requestFocus(); return;
         }
-
         try {
             FXMLLoader loader = new FXMLLoader(getClass().getResource("/fxml/AutoBid.fxml"));
             Parent root = loader.load();
-
             autoBidCtrl = loader.getController();
-            autoBidCtrl.initData(auctionId, item, auction);
-
+            autoBidCtrl.initData(auctionId, null, auction);
             autoBidCtrl.setOnActiveChanged(active -> Platform.runLater(() -> {
                 if (active) setAutoBidButtonActive();
                 else        setAutoBidButtonDefault();
             }));
-
             autoBidStage = new Stage();
             autoBidStage.initStyle(StageStyle.UNDECORATED);
             autoBidStage.setTitle("AutoBid");
             autoBidStage.setScene(new Scene(root));
             autoBidStage.initModality(Modality.NONE);
             autoBidStage.setResizable(false);
-
             autoBidStage.setOnHidden(e -> {
                 if (autoBidCtrl != null) autoBidCtrl.detachUI();
-                autoBidCtrl  = null;
-                autoBidStage = null;
-
+                autoBidCtrl = null; autoBidStage = null;
                 AutoBidManager.getInstance().setUICallback(auctionId, this::handleAutoBidManagerEvent);
-
                 if (AutoBidManager.getInstance().isActive(auctionId)) setAutoBidButtonActive();
-                else                                                    setAutoBidButtonDefault();
+                else setAutoBidButtonDefault();
             });
-
             autoBidStage.show();
-
         } catch (Exception ex) {
             showMsg("Failed to open AutoBid: " + ex.getMessage(), false);
-            ex.printStackTrace();
         }
     }
-
-    // ── Nút AutoBid ───────────────────────────────────────────────────────────
 
     private void setAutoBidButtonActive() {
         autoBidButton.setText("⚡ ON — Cancel");
@@ -531,8 +424,7 @@ public class BidDetailController implements ServerResponseListener {
         ClientSocket.getInstance().removeListener(this);
         AutoBidManager.getInstance().setUICallback(auctionId, null);
         if (autoBidCtrl != null) autoBidCtrl.detachUI();
-        autoBidCtrl  = null;
-        autoBidStage = null;
+        autoBidCtrl = null; autoBidStage = null;
     }
 
     @FXML
@@ -542,7 +434,7 @@ public class BidDetailController implements ServerResponseListener {
         stage.close();
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // ── UI Helpers ────────────────────────────────────────────────────────────
 
     private void showMsg(String msg, boolean success) {
         bidMsg.setStyle(success
@@ -551,20 +443,12 @@ public class BidDetailController implements ServerResponseListener {
         bidMsg.setText(msg);
     }
 
-    /**
-     * FIX: dùng đúng AlertType theo kết quả —
-     * INFORMATION cho thắng, WARNING cho thua/không có người bid.
-     */
     private void showSettledDialog(String title, String content, boolean isWinner) {
-        Alert alert = new Alert(
-                isWinner ? Alert.AlertType.INFORMATION : Alert.AlertType.WARNING);
+        Alert alert = new Alert(isWinner
+                ? Alert.AlertType.INFORMATION : Alert.AlertType.WARNING);
         alert.setTitle(title);
         alert.setHeaderText(null);
         alert.setContentText(content);
         alert.showAndWait();
-    }
-
-    private String fmt(BigDecimal n) {
-        return String.format("%,.0f ₫", n);
     }
 }

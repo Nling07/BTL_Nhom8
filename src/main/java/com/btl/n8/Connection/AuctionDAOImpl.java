@@ -1,6 +1,6 @@
 package com.btl.n8.Connection;
 
-import com.btl.n8.Controller.BidController.ItemAuctionRow;
+import com.btl.n8.DTO.ItemAuctionRow;
 import com.btl.n8.Model.Entity.Auction;
 import com.btl.n8.Model.Enums.AuctionStatus;
 
@@ -19,6 +19,7 @@ public class AuctionDAOImpl implements AuctionDAO {
 
     // ── findAllWithItems ──────────────────────────────────────────────────────
 
+    @Override
     public List<ItemAuctionRow> findAllWithItems() {
         List<ItemAuctionRow> result = new ArrayList<>();
         String sql = """
@@ -37,11 +38,11 @@ public class AuctionDAOImpl implements AuctionDAO {
         try (PreparedStatement ps = conn.prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
-                int itemId         = rs.getInt("item_id");
+                int    itemId      = rs.getInt("item_id");
                 String itemName    = rs.getString("item_name");
                 String itemType    = rs.getString("item_type");
-                int sellerId       = rs.getInt("seller_id");
-                int auctionId      = rs.getInt("auction_id");
+                int    sellerId    = rs.getInt("seller_id");
+                int    auctionId   = rs.getInt("auction_id");
                 boolean hasAuction = !rs.wasNull();
                 BigDecimal price   = rs.getBigDecimal("current_price");
                 String status      = rs.getString("status");
@@ -61,6 +62,7 @@ public class AuctionDAOImpl implements AuctionDAO {
 
     // ── closeExpiredAuctions ──────────────────────────────────────────────────
 
+    @Override
     public int closeExpiredAuctions() {
         String sql = """
             UPDATE auctions
@@ -81,9 +83,9 @@ public class AuctionDAOImpl implements AuctionDAO {
     @Override
     public boolean insert(Auction auction) {
         String sql = """
-        INSERT INTO auctions(item_id, starting_price, current_price, start_time, end_time, status)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """;
+            INSERT INTO auctions(item_id, starting_price, current_price, start_time, end_time, status)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """;
         try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setInt(1, auction.getItemId());
             ps.setBigDecimal(2, auction.getStartingPrice());
@@ -137,10 +139,10 @@ public class AuctionDAOImpl implements AuctionDAO {
     @Override
     public boolean update(Auction auction) {
         String sql = """
-        UPDATE auctions
-        SET starting_price = ?, current_price = ?, start_time = ?, end_time = ?, status = ?
-        WHERE auction_id = ?
-    """;
+            UPDATE auctions
+            SET starting_price = ?, current_price = ?, start_time = ?, end_time = ?, status = ?
+            WHERE auction_id = ?
+        """;
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setBigDecimal(1, auction.getStartingPrice());
             ps.setBigDecimal(2, auction.getCurrentPrice());
@@ -215,14 +217,16 @@ public class AuctionDAOImpl implements AuctionDAO {
         return auctions;
     }
 
+    // ── Mapper ────────────────────────────────────────────────────────────────
+
     private Auction mapAuction(ResultSet rs) throws SQLException {
-        int id               = rs.getInt("auction_id");
-        int itemId           = rs.getInt("item_id");
-        BigDecimal starting  = rs.getBigDecimal("starting_price");
-        BigDecimal current   = rs.getBigDecimal("current_price");
-        LocalDateTime start  = rs.getTimestamp("start_time").toLocalDateTime();
-        LocalDateTime end    = rs.getTimestamp("end_time").toLocalDateTime();
-        AuctionStatus status = AuctionStatus.valueOf(rs.getString("status"));
+        int           id       = rs.getInt("auction_id");
+        int           itemId   = rs.getInt("item_id");
+        BigDecimal    starting = rs.getBigDecimal("starting_price");
+        BigDecimal    current  = rs.getBigDecimal("current_price");
+        LocalDateTime start    = rs.getTimestamp("start_time").toLocalDateTime();
+        LocalDateTime end      = rs.getTimestamp("end_time").toLocalDateTime();
+        AuctionStatus status   = AuctionStatus.valueOf(rs.getString("status"));
         return new Auction(id, itemId, starting, current, start, end, status);
     }
 }

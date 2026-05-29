@@ -48,4 +48,8 @@ public class ServerSessionManager {
     public void removeSession(String token) {
         sessions.remove(token);
     }
+
+    public void updateUser(String sessionId, User updatedUser) {
+        sessions.put(sessionId, updatedUser);
+    }
 }

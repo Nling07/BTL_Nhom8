@@ -12,7 +12,6 @@ module com.btl.n8 {
     // Thêm để Gson có thể access fields
     opens com.btl.n8.DTO to com.google.gson;
     opens com.btl.n8.Network to com.google.gson;
-    opens com.btl.n8.Service to com.google.gson;
 
     exports com.btl.n8;
     exports com.btl.n8.Controller;
@@ -27,4 +26,5 @@ module com.btl.n8 {
     opens com.btl.n8.Model.Enums to com.google.gson;
     exports com.btl.n8.Model.Mapper;
     opens com.btl.n8.Model.Mapper to com.google.gson;
+    opens com.btl.n8.Service to com.google.gson, javafx.fxml;
 }

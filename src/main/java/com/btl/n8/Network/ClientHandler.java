@@ -76,6 +76,30 @@ public class ClientHandler implements Runnable {
                         case "BID"       -> requestHandler.handleBid(gson.fromJson(json, BidRequest.class));
                         case "ADD_ITEM"  -> requestHandler.handleAddItem(gson.fromJson(json, AddItemRequest.class));
                         case "AUTO_BID"  -> requestHandler.handleAutoBid(gson.fromJson(json, AutoBidRequest.class));
+                        case "DEPOSIT"          -> requestHandler.handleDeposit(
+                                gson.fromJson(json, DepositRequest.class));
+                        case "UPGRADE_SELLER"   -> requestHandler.handleUpgradeSeller(
+                                gson.fromJson(json, UpgradeSellerRequest.class));
+                        case "GET_USER_BIDS"    -> requestHandler.handleGetUserBids(
+                                gson.fromJson(json, GetUserBidsRequest.class));
+                        case "GET_SELLER_ITEMS" -> requestHandler.handleGetSellerItems(
+                                gson.fromJson(json, GetSellerItemsRequest.class));
+                        case "GET_AUCTION_LIST"   -> requestHandler.handleGetAuctionList(
+                                gson.fromJson(json, GetAuctionListRequest.class));
+                        case "GET_AUCTION_DETAIL" -> requestHandler.handleGetAuctionDetail(
+                                gson.fromJson(json, GetAuctionDetailRequest.class));
+                        case "ADMIN_GET_DASHBOARD",
+                             "ADMIN_GET_USERS",
+                             "ADMIN_GET_AUCTIONS",
+                             "ADMIN_GET_ITEMS",
+                             "ADMIN_UPGRADE_USER",
+                             "ADMIN_DEMOTE_USER",
+                             "ADMIN_DELETE_USER",
+                             "ADMIN_CLOSE_AUCTION",
+                             "ADMIN_CANCEL_AUCTION",
+                             "ADMIN_DELETE_AUCTION",
+                             "ADMIN_DELETE_ITEM"     -> requestHandler.handleAdmin(
+                                gson.fromJson(json, AdminRequest.class));
                     }
                 } catch (JsonSyntaxException e) {
                     System.err.println("JSON lỗi: " + e.getMessage());

@@ -1,66 +1,97 @@
 package com.btl.n8.Controller;
 
-import com.btl.n8.Connection.DataConnection;
-import com.btl.n8.Connection.UserDAO;
-import com.btl.n8.Connection.UserDAOImpl;
-import com.btl.n8.Model.Entity.Bidder;
+import com.btl.n8.DTO.DepositRequest;
+import com.btl.n8.DTO.DepositResponse;
+import com.btl.n8.DTO.UpgradeSellerRequest;
+import com.btl.n8.DTO.UpgradeSellerResponse;
 import com.btl.n8.Model.Entity.User;
 import com.btl.n8.Model.Enums.Role;
-
 import com.btl.n8.Network.ClientSocket;
+import com.btl.n8.Network.ServerResponseListener;
+import com.btl.n8.Util.LocalDateTimeAdapter;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonObject;
+
+import javafx.application.Platform;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
-import javafx.scene.control.Alert;
-import javafx.scene.control.Button;
-import javafx.scene.control.ButtonType;
-import javafx.scene.control.Label;
-import javafx.scene.control.TextInputDialog;
+import javafx.scene.control.*;
 import javafx.stage.Stage;
 
 import java.math.BigDecimal;
-import java.sql.Connection;
+import java.time.LocalDateTime;
 import java.util.Optional;
 
-public class HomeController {
+public class HomeController implements ServerResponseListener {
 
-    @FXML private Label balanceLabel;
+    @FXML private Label  balanceLabel;
     @FXML private Button becomeSellerBtn;
+
+    private static final Gson gson = new GsonBuilder()
+            .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
+            .create();
 
     @FXML
     public void initialize() {
-        if (!SessionManager.getInstance().isLoggedIn()) {
-            System.out.println("Warning: User not logged in");
-            return;
-        }
+        if (!SessionManager.getInstance().isLoggedIn()) return;
+        ClientSocket.getInstance().addListener(this);
         refreshBalance();
         updateBecomeSellerVisibility();
     }
 
-    private void refreshBalance() {
-        User user = SessionManager.getInstance().getCurrentUser();
-        if (balanceLabel == null || user == null) return;
-        BigDecimal bal = user.getBalance() != null ? user.getBalance() : BigDecimal.ZERO;
-        balanceLabel.setText(String.format("%,.0f", bal));
-    }
+    // ── ServerResponseListener ────────────────────────────────────────────────
 
-    private void updateBecomeSellerVisibility() {
-        User user = SessionManager.getInstance().getCurrentUser();
-        if (becomeSellerBtn != null) {
-            // Chỉ hiện nút nếu user là BIDDER
-            becomeSellerBtn.setVisible(user != null && user.getRole() == Role.BIDDER);
+    @Override
+    public void onRespone(JsonObject json) {
+        if (!json.has("action")) return;
+        switch (json.get("action").getAsString()) {
+
+            case "DEPOSIT_RESULT" -> {
+                DepositResponse res = gson.fromJson(json, DepositResponse.class);
+                Platform.runLater(() -> {
+                    if (res.isSuccess()) {
+                        User user = SessionManager.getInstance().getCurrentUser();
+                        if (user != null) user.setBalance(res.getNewBalance());
+                        refreshBalance();
+                        showAlert(Alert.AlertType.INFORMATION, "Thành công",
+                                String.format("Nạp thành công!\nSố dư hiện tại: %,.0f ₫",
+                                        res.getNewBalance()));
+                    } else {
+                        showAlert(Alert.AlertType.ERROR, "Lỗi",
+                                res.getMessage() != null ? res.getMessage() : "Nạp tiền thất bại");
+                    }
+                });
+            }
+
+            case "UPGRADE_SELLER_RESULT" -> {
+                UpgradeSellerResponse res = gson.fromJson(json, UpgradeSellerResponse.class);
+                Platform.runLater(() -> {
+                    if (res.isSuccess() && res.getUpdatedUser() != null) {
+                        SessionManager.getInstance().setCurrentUser(res.getUpdatedUser());
+                        updateBecomeSellerVisibility();
+                        showAlert(Alert.AlertType.INFORMATION, "Thành công",
+                                "Tài khoản đã được nâng cấp thành Seller!");
+                    } else {
+                        showAlert(Alert.AlertType.ERROR, "Lỗi",
+                                res.getMessage() != null ? res.getMessage()
+                                        : "Không thể nâng cấp tài khoản");
+                    }
+                });
+            }
         }
     }
+
+    // ── Actions ───────────────────────────────────────────────────────────────
 
     @FXML
     public void deposit(ActionEvent event) {
         User user = SessionManager.getInstance().getCurrentUser();
         if (user == null) return;
-
-        // Cả BIDDER và SELLER đều được nạp tiền
         if (user.getRole() != Role.BIDDER && user.getRole() != Role.SELLER) {
             showAlert(Alert.AlertType.WARNING, "Thông báo", "Admin không thể nạp tiền.");
             return;
@@ -79,26 +110,11 @@ public class HomeController {
                     showAlert(Alert.AlertType.ERROR, "Lỗi", "Số tiền phải lớn hơn 0.");
                     return;
                 }
-
-                BigDecimal current = user.getBalance() != null ? user.getBalance() : BigDecimal.ZERO;
-                BigDecimal newBalance = current.add(amount);
-                user.setBalance(newBalance);
-
-                // Lưu vào DB
-                Connection conn = DataConnection.getConnection();
-                if (conn != null) {
-                    new UserDAOImpl(conn).update(user);
-                }
-
-                refreshBalance();
-                showAlert(Alert.AlertType.INFORMATION, "Thành công",
-                        String.format("Nạp thành công %,.0f ₫\nSố dư hiện tại: %,.0f ₫", amount, newBalance));
-
+                String sessionId = SessionManager.getInstance().getSessionId();
+                ClientSocket.getInstance().sendMessage(
+                        new DepositRequest(sessionId, user.getId(), amount));
             } catch (NumberFormatException e) {
-                showAlert(Alert.AlertType.ERROR, "Lỗi", "Số tiền không hợp lệ. Vui lòng nhập số.");
-            } catch (Exception e) {
-                e.printStackTrace();
-                showAlert(Alert.AlertType.ERROR, "Lỗi", "Đã xảy ra lỗi: " + e.getMessage());
+                showAlert(Alert.AlertType.ERROR, "Lỗi", "Số tiền không hợp lệ.");
             }
         });
     }
@@ -119,56 +135,28 @@ public class HomeController {
 
         Optional<ButtonType> result = confirm.showAndWait();
         if (result.isPresent() && result.get() == ButtonType.OK) {
-            try {
-                Connection conn = DataConnection.getConnection();
-                if (conn == null) {
-                    showAlert(Alert.AlertType.ERROR, "Lỗi", "Không thể kết nối database.");
-                    return;
-                }
-
-                UserDAO userDAO = new UserDAOImpl(conn);
-                boolean success = userDAO.upgradeToSeller(user.getId());
-
-                if (success) {
-                    // Cập nhật session với user mới từ DB
-                    User updatedUser = userDAO.findById(user.getId());
-                    SessionManager.getInstance().setCurrentUser(updatedUser);
-
-                    updateBecomeSellerVisibility();
-                    showAlert(Alert.AlertType.INFORMATION, "Thành công",
-                            "Tài khoản đã được nâng cấp thành Seller!");
-                } else {
-                    showAlert(Alert.AlertType.ERROR, "Lỗi", "Không thể nâng cấp tài khoản. Vui lòng thử lại.");
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
-                showAlert(Alert.AlertType.ERROR, "Lỗi", "Đã xảy ra lỗi: " + e.getMessage());
-            }
+            String sessionId = SessionManager.getInstance().getSessionId();
+            ClientSocket.getInstance().sendMessage(
+                    new UpgradeSellerRequest(sessionId, user.getId()));
         }
     }
 
+    // ── Navigation ────────────────────────────────────────────────────────────
+
     public void Bid(ActionEvent event) throws Exception {
         if (!SessionManager.getInstance().isLoggedIn()) return;
-        Parent root = FXMLLoader.load(getClass().getResource("/fxml/bid.fxml"));
-        Stage stage = (Stage)((Node)event.getSource()).getScene().getWindow();
-        stage.setScene(new Scene(root));
-        stage.show();
+        navigateTo(event, "/fxml/bid.fxml");
     }
 
     public void Sell(ActionEvent event) throws Exception {
         if (!SessionManager.getInstance().isLoggedIn()) return;
-        Parent root = FXMLLoader.load(getClass().getResource("/fxml/sell.fxml"));
-        Stage stage = (Stage)((Node)event.getSource()).getScene().getWindow();
-        stage.setScene(new Scene(root));
-        stage.show();
+        navigateTo(event, "/fxml/sell.fxml");
     }
 
     public void account(ActionEvent event) throws Exception {
         if (!SessionManager.getInstance().isLoggedIn()) return;
-
         FXMLLoader loader = new FXMLLoader(getClass().getResource("/fxml/account.fxml"));
         Parent root = loader.load();
-
         Stage popup = new Stage();
         popup.setTitle("My Account");
         popup.setScene(new Scene(root));
@@ -178,15 +166,35 @@ public class HomeController {
     }
 
     public void logout(ActionEvent event) throws Exception {
+        ClientSocket.getInstance().removeListener(this);
         AutoBidManager.getInstance().cancelAll();
         SessionManager.getInstance().logout();
         SessionManager.getInstance().setCurrentUser(null);
         SessionManager.getInstance().setSessionId(null);
         ClientSocket.getInstance().close();
         ClientSocket.getInstance().reset();
-        
-        Parent root = FXMLLoader.load(getClass().getResource("/fxml/login.fxml"));
-        Stage stage = (Stage)((Node)event.getSource()).getScene().getWindow();
+        navigateTo(event, "/fxml/login.fxml");
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private void refreshBalance() {
+        User user = SessionManager.getInstance().getCurrentUser();
+        if (balanceLabel == null || user == null) return;
+        BigDecimal bal = user.getBalance() != null ? user.getBalance() : BigDecimal.ZERO;
+        balanceLabel.setText(String.format("%,.0f", bal));
+    }
+
+    private void updateBecomeSellerVisibility() {
+        User user = SessionManager.getInstance().getCurrentUser();
+        if (becomeSellerBtn != null)
+            becomeSellerBtn.setVisible(user != null && user.getRole() == Role.BIDDER);
+    }
+
+    private void navigateTo(ActionEvent event, String fxml) throws Exception {
+        ClientSocket.getInstance().removeListener(this);
+        Parent root = FXMLLoader.load(getClass().getResource(fxml));
+        Stage stage = (Stage) ((Node) event.getSource()).getScene().getWindow();
         stage.setScene(new Scene(root));
         stage.show();
     }

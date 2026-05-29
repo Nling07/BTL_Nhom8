@@ -1,6 +1,7 @@
 package com.btl.n8.Service;
 
 import com.btl.n8.Connection.AuctionDAO;
+import com.btl.n8.DTO.ItemAuctionRow;
 import com.btl.n8.Model.Entity.Auction;
 import com.btl.n8.Model.Enums.AuctionStatus;
 
@@ -15,13 +16,20 @@ public class AuctionService {
         this.auctionDAO = auctionDAO;
     }
 
+    // ── Auction List (JOIN query) ──────────────────────────────────────────────
+
     /**
-     * Expose DAO để BidController có thể cast sang AuctionDAOImpl
-     * và gọi findAllWithItems() (JOIN query).
+     * Đóng auction đã hết hạn rồi trả về danh sách tất cả item kèm thông tin auction.
+     * Dùng cho RequestHandler.handleGetAuctionList() — không cần gọi DAO trực tiếp.
+     *
+     * @return danh sách ItemAuctionRow (JOIN items + auctions)
      */
-    public AuctionDAO getAuctionDAO() {
-        return auctionDAO;
+    public List<ItemAuctionRow> getAuctionList() {
+        auctionDAO.closeExpiredAuctions();
+        return auctionDAO.findAllWithItems();
     }
+
+    // ── CRUD ──────────────────────────────────────────────────────────────────
 
     public boolean createAuction(Auction auction) {
         if (auction.getStartTime().isAfter(auction.getEndTime())) return false;
@@ -58,6 +66,7 @@ public class AuctionService {
     /**
      * Anti-sniping: gia hạn thời gian auction thêm extraSeconds giây.
      * Chỉ có hiệu lực nếu auction vẫn OPEN.
+     *
      * @return endTime mới nếu gia hạn thành công, null nếu thất bại.
      */
     public LocalDateTime extendEndTime(int auctionId, int extraSeconds) {
@@ -67,6 +76,18 @@ public class AuctionService {
         LocalDateTime newEndTime = auction.getEndTime().plusSeconds(extraSeconds);
         boolean ok = auctionDAO.extendEndTime(auctionId, newEndTime);
         return ok ? newEndTime : null;
+    }
+
+    /**
+     * Cập nhật current_price của auction — dùng trong RequestHandler._handleBidLocked().
+     * Thay thế cho auctionService.getAuctionDAO().updateCurrentPrice(...).
+     */
+    public boolean updateCurrentPrice(int auctionId, BigDecimal newPrice) {
+        return auctionDAO.updateCurrentPrice(auctionId, newPrice);
+    }
+
+    public boolean deleteAuctionById(int id) {
+        return auctionDAO.deleteById(id);
     }
 
     public Auction getAuctionById(int id) {
