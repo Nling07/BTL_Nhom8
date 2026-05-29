@@ -2,24 +2,27 @@ package com.btl.n8.DTO;
 
 import com.btl.n8.Model.Entity.Auction;
 import com.btl.n8.Model.Entity.Bid;
-import com.btl.n8.Model.Entity.Item;
 
 import java.util.List;
 
 public class GetAuctionDetailResponse extends Response {
-    private Auction auction;
-    private Item item;
-    private List<Bid> bidHistory;
+    private boolean      success;
+    private Auction      auction;
+    private List<Bid>    bidHistory;
 
-    public GetAuctionDetailResponse(String msg, String sid,
-                                    Auction auction, Item item,
+    public GetAuctionDetailResponse() { super(); }
+
+    public GetAuctionDetailResponse(String message, String sessionId,
+                                    boolean success,
+                                    Auction auction,
                                     List<Bid> bidHistory) {
-        super("AUCTION_DETAIL", msg, sid);
+        super("AUCTION_DETAIL_RESULT", message, sessionId);
+        this.success    = success;
         this.auction    = auction;
-        this.item       = item;
         this.bidHistory = bidHistory;
     }
-    public Auction   getAuction()    { return auction; }
-    public Item      getItem()       { return item; }
-    public List<Bid> getBidHistory() { return bidHistory; }
+
+    public boolean   isSuccess()        { return success; }
+    public Auction   getAuction()       { return auction; }
+    public List<Bid> getBidHistory()    { return bidHistory; }
 }

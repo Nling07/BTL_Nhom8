@@ -254,8 +254,7 @@ public class RequestHandler {
                         + (previousActiveBid != null ? previousActiveBid.getAmount() : "NONE"));
 
                 // 1. Cập nhật current_price
-                boolean auctionUpdated = auctionService.getAuctionDAO()
-                        .updateCurrentPrice(auctionId, amount);
+                boolean auctionUpdated = auctionService.updateCurrentPrice(auctionId, amount);
                 System.out.println("[DEBUG-TXN] updateCurrentPrice → " + auctionUpdated);
                 if (!auctionUpdated) {
                     conn.rollback();
@@ -493,6 +492,102 @@ public class RequestHandler {
             send(new GetSellerItemsResponse("OK", req.getSessionId(), true, items, auctions));
         } catch (AuthenticationException e) {
             send(new GetSellerItemsResponse(e.getMessage(), null, false, null, null));
+        }
+    }
+
+    // ── GET_AUCTION_LIST ──────────────────────────────────────────────────────────
+    public void handleGetAuctionList(GetAuctionListRequest req) {
+        try {
+            User user = ServerSessionManager.getInstance().getUser(req.getSessionId());
+            if (user == null) throw new AuthenticationException("Chưa đăng nhập");
+
+            // Đóng các auction hết giờ và lấy danh sách qua AuctionService (không gọi DAO trực tiếp)
+            List<com.btl.n8.DTO.ItemAuctionRow> joined = auctionService.getAuctionList();
+
+            List<GetAuctionListResponse.AuctionRow> rows = joined.stream()
+                    .map(r -> new GetAuctionListResponse.AuctionRow(
+                            r.itemId, r.itemName, r.itemType,
+                            r.currentPrice, r.status, r.auctionId, r.sellerId))
+                    .collect(java.util.stream.Collectors.toList());
+
+            send(new GetAuctionListResponse("OK", req.getSessionId(), true, rows));
+        } catch (AuthenticationException e) {
+            send(new GetAuctionListResponse(e.getMessage(), null, false, null));
+        }
+    }
+
+    // ── GET_AUCTION_DETAIL ────────────────────────────────────────────────────────
+    public void handleGetAuctionDetail(GetAuctionDetailRequest req) {
+        try {
+            User user = ServerSessionManager.getInstance().getUser(req.getSessionId());
+            if (user == null) throw new AuthenticationException("Chưa đăng nhập");
+
+            Auction auction  = auctionService.getAuctionById(req.getAuctionId());
+            List<Bid> bids   = bidService.getBidsByAuction(req.getAuctionId());
+
+            send(new GetAuctionDetailResponse("OK", req.getSessionId(),
+                    auction != null, auction, bids));
+        } catch (AuthenticationException e) {
+            send(new GetAuctionDetailResponse(e.getMessage(), null, false, null, null));
+        }
+    }
+
+    // ── ADMIN_* ───────────────────────────────────────────────────────────────────
+    public void handleAdmin(AdminRequest req) {
+        try {
+            User user = ServerSessionManager.getInstance().getUser(req.getSessionId());
+            if (user == null) throw new AuthenticationException("Chưa đăng nhập");
+            if (user.getRole() != com.btl.n8.Model.Enums.Role.ADMIN)
+                throw new AuthenticationException("Không có quyền Admin");
+
+            AdminService adminService = ServiceFactory
+                    .createAdminService(conn);
+            String sid = req.getSessionId();
+
+            switch (req.getAction()) {
+                case "ADMIN_GET_DASHBOARD" -> send(new AdminResponse(
+                        "ADMIN_RESULT", "OK", sid, true).withDashboard(
+                        adminService.getTotalUsers(), adminService.getTotalAuctions(),
+                        adminService.getOpenAuctionCount(), adminService.getTotalItems(),
+                        adminService.getTotalSellers(), adminService.getCancelledAuctionCount()));
+
+                case "ADMIN_GET_USERS"     -> send(new AdminResponse(
+                        "ADMIN_RESULT", "OK", sid, true)
+                        .withUsers(adminService.getAllUsers()));
+
+                case "ADMIN_GET_AUCTIONS"  -> send(new AdminResponse(
+                        "ADMIN_RESULT", "OK", sid, true)
+                        .withAuctions(adminService.getAllAuctions()));
+
+                case "ADMIN_GET_ITEMS"     -> send(new AdminResponse(
+                        "ADMIN_RESULT", "OK", sid, true)
+                        .withItems(adminService.getAllItems()));
+
+                case "ADMIN_UPGRADE_USER"  -> { adminService.upgradeUserToSeller(req.getTargetId());
+                    send(new AdminResponse("ADMIN_RESULT", "OK", sid, true)); }
+
+                case "ADMIN_DEMOTE_USER"   -> { adminService.demoteSellerToBidder(req.getTargetId());
+                    send(new AdminResponse("ADMIN_RESULT", "OK", sid, true)); }
+
+                case "ADMIN_DELETE_USER"   -> { adminService.deleteUserById(req.getTargetId());
+                    send(new AdminResponse("ADMIN_RESULT", "OK", sid, true)); }
+
+                case "ADMIN_CLOSE_AUCTION" -> { adminService.closeAuction(req.getTargetId());
+                    send(new AdminResponse("ADMIN_RESULT", "OK", sid, true)); }
+
+                case "ADMIN_CANCEL_AUCTION"-> { adminService.cancelAuction(req.getTargetId());
+                    send(new AdminResponse("ADMIN_RESULT", "OK", sid, true)); }
+
+                case "ADMIN_DELETE_AUCTION"-> { adminService.deleteAuctionById(req.getTargetId());
+                    send(new AdminResponse("ADMIN_RESULT", "OK", sid, true)); }
+
+                case "ADMIN_DELETE_ITEM"   -> { adminService.deleteItemById(req.getTargetId());
+                    send(new AdminResponse("ADMIN_RESULT", "OK", sid, true)); }
+
+                default -> send(new AdminResponse("ADMIN_RESULT", "Unknown action", sid, false));
+            }
+        } catch (AuthenticationException e) {
+            send(new AdminResponse("ADMIN_RESULT", e.getMessage(), null, false));
         }
     }
 }

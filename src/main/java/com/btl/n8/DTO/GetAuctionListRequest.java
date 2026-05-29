@@ -1,5 +1,8 @@
 package com.btl.n8.DTO;
 
 public class GetAuctionListRequest extends Request {
-    public GetAuctionListRequest() { super("GET_AUCTION_LIST"); }
+    public GetAuctionListRequest() {}
+    public GetAuctionListRequest(String sessionId) {
+        super("GET_AUCTION_LIST", sessionId);
+    }
 }

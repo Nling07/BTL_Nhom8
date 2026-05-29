@@ -1,6 +1,6 @@
 package com.btl.n8.Connection;
 
-import com.btl.n8.Controller.BidController.ItemAuctionRow;
+import com.btl.n8.DTO.ItemAuctionRow;
 import com.btl.n8.Model.Entity.Auction;
 
 import java.math.BigDecimal;
