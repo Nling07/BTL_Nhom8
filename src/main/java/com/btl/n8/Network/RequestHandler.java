@@ -358,15 +358,110 @@ public class RequestHandler {
     }
 
     // ── ADD_ITEM ──────────────────────────────────────────────────────────────
+    // ── ADD_ITEM ──────────────────────────────────────────────────────────────
+    // Thay thế đoạn "Not implemented" bằng implementation đầy đủ.
+    // Đặt đoạn này vào RequestHandler.java tại vị trí handleAddItem().
 
     public void handleAddItem(AddItemRequest req) {
         try {
+            // 1. Xác thực session
             User user = ServerSessionManager.getInstance().getUser(req.getSessionId());
             if (user == null) throw new AuthenticationException("Chưa đăng nhập");
-            send(new AddItemResponse("Not implemented", req.getSessionId(), false, -1, -1, null));
+
+            // 2. Kiểm tra role — chỉ SELLER mới được thêm item
+            if (user.getRole() != com.btl.n8.Model.Enums.Role.SELLER) {
+                send(new AddItemResponse("Chỉ Seller mới có thể đăng bán", req.getSessionId(),
+                        false, -1, -1, null));
+                return;
+            }
+
+            // 3. Validate dữ liệu cơ bản
+            if (req.getName() == null || req.getName().isBlank()) {
+                send(new AddItemResponse("Tên item không được để trống", req.getSessionId(),
+                        false, -1, -1, null));
+                return;
+            }
+            if (req.getType() == null) {
+                send(new AddItemResponse("Loại item không hợp lệ", req.getSessionId(),
+                        false, -1, -1, null));
+                return;
+            }
+            if (req.getStartingPrice() == null
+                    || req.getStartingPrice().compareTo(java.math.BigDecimal.ZERO) <= 0) {
+                send(new AddItemResponse("Giá khởi điểm phải lớn hơn 0", req.getSessionId(),
+                        false, -1, -1, null));
+                return;
+            }
+            if (req.getStartTime() == null || req.getEndTime() == null
+                    || !req.getStartTime().isBefore(req.getEndTime())) {
+                send(new AddItemResponse("Thời gian đấu giá không hợp lệ", req.getSessionId(),
+                        false, -1, -1, null));
+                return;
+            }
+
+            // 4. Decode ảnh Base64 → byte[]
+            byte[] imageBytes = null;
+            if (req.getImageBase64() != null && !req.getImageBase64().isBlank()) {
+                try {
+                    imageBytes = java.util.Base64.getDecoder().decode(req.getImageBase64());
+                } catch (IllegalArgumentException e) {
+                    send(new AddItemResponse("Dữ liệu ảnh không hợp lệ", req.getSessionId(),
+                            false, -1, -1, null));
+                    return;
+                }
+            }
+
+            // 5. Tạo Item qua ItemService (Factory pattern)
+            com.btl.n8.Model.Entity.Item item = itemService.createItem(
+                    req.getName(),
+                    req.getType().name(),
+                    req.getSellerId(),
+                    imageBytes
+            );
+            boolean itemOk = itemService.addItem(item);
+            if (!itemOk) {
+                send(new AddItemResponse("Không thể tạo item", req.getSessionId(),
+                        false, -1, -1, null));
+                return;
+            }
+
+            // 6. Tạo Auction qua AuctionService
+            com.btl.n8.Model.Entity.Auction auction = new com.btl.n8.Model.Entity.Auction(
+                    0, item.getId(),
+                    req.getStartingPrice(), req.getStartingPrice(),
+                    req.getStartTime(), req.getEndTime(),
+                    com.btl.n8.Model.Enums.AuctionStatus.OPEN
+            );
+            boolean auctionOk = auctionService.createAuction(auction);
+            if (!auctionOk) {
+                // Rollback: xóa item vừa tạo
+                itemService.deleteItemById(item.getId());
+                send(new AddItemResponse("Không thể tạo phiên đấu giá", req.getSessionId(),
+                        false, -1, item.getId(), null));
+                return;
+            }
+
+            // 7. Lấy auctionId vừa insert để trả về
+            com.btl.n8.Model.Entity.Auction created =
+                    auctionService.getAuctionByItemId(item.getId());
+            int auctionId = created != null ? created.getId() : -1;
+
+            send(new AddItemResponse("Đăng bán thành công", req.getSessionId(),
+                    true, auctionId, item.getId(), req.getEndTime()));
+
+            System.out.println("[ADD_ITEM] seller=" + user.getAccount()
+                    + " item=" + item.getName()
+                    + " itemId=" + item.getId()
+                    + " auctionId=" + auctionId);
+
         } catch (AuthenticationException e) {
             System.err.println("[AuthenticationException] " + e.getMessage());
             send(new AddItemResponse(e.getMessage(), null, false, -1, -1, null));
+        } catch (Exception e) {
+            System.err.println("[handleAddItem] Unexpected error: " + e.getMessage());
+            e.printStackTrace();
+            send(new AddItemResponse("Lỗi hệ thống: " + e.getMessage(),
+                    req.getSessionId(), false, -1, -1, null));
         }
     }
 
