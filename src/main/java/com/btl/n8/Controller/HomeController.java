@@ -9,6 +9,7 @@ import com.btl.n8.Model.Enums.Role;
 import com.btl.n8.Network.ClientSocket;
 import com.btl.n8.Network.ServerResponseListener;
 import com.btl.n8.Util.LocalDateTimeAdapter;
+import com.btl.n8.Util.UserTypeAdapter;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
@@ -32,8 +33,10 @@ public class HomeController implements ServerResponseListener {
     @FXML private Label  balanceLabel;
     @FXML private Button becomeSellerBtn;
 
+    // FIX: thêm UserTypeAdapter để deserialize UpgradeSellerResponse.updatedUser (abstract User)
     private static final Gson gson = new GsonBuilder()
             .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
+            .registerTypeAdapter(User.class, new UserTypeAdapter())
             .create();
 
     @FXML
@@ -69,6 +72,7 @@ public class HomeController implements ServerResponseListener {
             }
 
             case "UPGRADE_SELLER_RESULT" -> {
+                // FIX: UpgradeSellerResponse chứa User (abstract) → cần UserTypeAdapter
                 UpgradeSellerResponse res = gson.fromJson(json, UpgradeSellerResponse.class);
                 Platform.runLater(() -> {
                     if (res.isSuccess() && res.getUpdatedUser() != null) {

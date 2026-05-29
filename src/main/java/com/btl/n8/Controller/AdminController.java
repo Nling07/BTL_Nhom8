@@ -9,6 +9,7 @@ import com.btl.n8.Model.Enums.AuctionStatus;
 import com.btl.n8.Network.ClientSocket;
 import com.btl.n8.Network.ServerResponseListener;
 import com.btl.n8.Util.LocalDateTimeAdapter;
+import com.btl.n8.Util.UserTypeAdapter;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
@@ -54,11 +55,12 @@ public class AdminController implements ServerResponseListener {
     @FXML private TableColumn<Item, String> colItemId, colItemName,
             colItemType, colItemSeller, colItemActions;
 
-    // Pending action context (for matching responses)
     private String pendingAction = null;
 
+    // FIX: thêm UserTypeAdapter để deserialize List<User> trong AdminResponse (abstract User)
     private static final Gson gson = new GsonBuilder()
             .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
+            .registerTypeAdapter(User.class, new UserTypeAdapter())
             .create();
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -84,6 +86,7 @@ public class AdminController implements ServerResponseListener {
         if (!json.has("action")) return;
         if (!"ADMIN_RESULT".equals(json.get("action").getAsString())) return;
 
+        // FIX: gson đã có UserTypeAdapter → AdminResponse.users (List<User>) deserialize đúng
         AdminResponse res = gson.fromJson(json, AdminResponse.class);
         Platform.runLater(() -> {
             if (!res.isSuccess()) {

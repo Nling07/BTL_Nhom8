@@ -38,6 +38,9 @@ public class RegisterController implements ServerResponseListener {
 
     @FXML
     public void initialize() {
+        // FIX: remove trước rồi add — tránh listener bị stack khi quay lại màn hình
+        // (cùng pattern đã được áp dụng đúng ở LoginController)
+        ClientSocket.getInstance().removeListener(this);
         ClientSocket.getInstance().addListener(this);
     }
 

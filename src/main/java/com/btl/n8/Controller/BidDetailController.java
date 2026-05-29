@@ -9,6 +9,7 @@ import com.btl.n8.Network.ClientSocket;
 import com.btl.n8.Network.ServerResponseListener;
 import com.btl.n8.Service.BidDetailControllerService;
 import com.btl.n8.Util.LocalDateTimeAdapter;
+import com.btl.n8.Util.UserTypeAdapter;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
@@ -23,14 +24,17 @@ import javafx.scene.chart.LineChart;
 import javafx.scene.chart.NumberAxis;
 import javafx.scene.chart.XYChart;
 import javafx.scene.control.*;
+import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
 import javafx.stage.StageStyle;
 
+import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Base64;
 import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -63,8 +67,10 @@ public class BidDetailController implements ServerResponseListener {
     /** Service xử lý toàn bộ logic nghiệp vụ — Controller chỉ cập nhật UI */
     private final BidDetailControllerService service = new BidDetailControllerService();
 
+    // FIX: thêm UserTypeAdapter để tránh lỗi "Abstract classes can't be instantiated"
     private static final Gson gson = new GsonBuilder()
             .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
+            .registerTypeAdapter(User.class, new UserTypeAdapter())
             .create();
 
     private static final int SNIPE_EXTENSION_SECONDS = 30;
@@ -81,18 +87,12 @@ public class BidDetailController implements ServerResponseListener {
 
     // ── Init ─────────────────────────────────────────────────────────────────
 
-    /**
-     * Khởi tạo dữ liệu cho màn hình chi tiết đấu giá.
-     *
-     * @param auctionId ID của auction cần hiển thị
-     * @param auction   Auction object nhận từ server (có thể null nếu chưa load)
-     */
     public void initData(int auctionId, Auction auction) {
         this.auctionId = auctionId;
         this.bidderId  = SessionManager.getInstance().getCurrentUser().getId();
         this.auction   = auction;
 
-        // Hiển thị trạng thái ban đầu
+        // Hiển thị trạng thái ban đầu (placeholder)
         itemName.setText("Auction #" + auctionId);
         itemId.setText("#" + auctionId);
         itemType.setText("-");
@@ -106,7 +106,7 @@ public class BidDetailController implements ServerResponseListener {
             setAutoBidButtonActive();
         }
 
-        // Lấy chi tiết auction + bid history qua service
+        // Lấy chi tiết auction + bid history + ảnh qua service
         String sessionId = SessionManager.getInstance().getSessionId();
         service.requestAuctionDetail(sessionId, auctionId);
     }
@@ -141,6 +141,17 @@ public class BidDetailController implements ServerResponseListener {
             this.auction = res.getAuction();
             AutoBidManager.getInstance().updateAuction(auctionId, auction);
 
+            // FIX: hiển thị tên và loại sản phẩm (trước đây luôn là placeholder)
+            if (res.getItemName() != null) {
+                itemName.setText(res.getItemName());
+            }
+            if (res.getItemType() != null) {
+                itemType.setText(res.getItemType());
+            }
+
+            // FIX: hiển thị ảnh sản phẩm từ Base64 (trước đây ImageView luôn trống)
+            loadItemImage(res.getImageBase64());
+
             updateAuctionStatus();
             loadChartFromBids(res.getBidHistory());
 
@@ -155,9 +166,29 @@ public class BidDetailController implements ServerResponseListener {
         });
     }
 
+    /**
+     * Decode Base64 và hiển thị ảnh lên ImageView.
+     * Nếu imageBase64 là null hoặc rỗng, giữ nguyên placeholder.
+     */
+    private void loadItemImage(String imageBase64) {
+        if (itemImage == null) return;
+        if (imageBase64 == null || imageBase64.isEmpty()) {
+            System.out.println("[BidDetail] Không có ảnh sản phẩm.");
+            return;
+        }
+        try {
+            byte[] bytes = Base64.getDecoder().decode(imageBase64);
+            Image img = new Image(new ByteArrayInputStream(bytes));
+            itemImage.setImage(img);
+            itemImage.setPreserveRatio(true);
+            itemImage.setSmooth(true);
+        } catch (Exception e) {
+            System.err.println("[BidDetail] Không load được ảnh: " + e.getMessage());
+        }
+    }
+
     private void handleBidUpdate(JsonObject json) {
         BidResponse res = gson.fromJson(json, BidResponse.class);
-        // Dùng service để kiểm tra — không tự so sánh trong controller
         if (!service.isCurrentAuction(res.getAuctionId(), this.auctionId)) return;
 
         Platform.runLater(() -> {
@@ -174,14 +205,12 @@ public class BidDetailController implements ServerResponseListener {
                     startCountdown(res.getNewEndTime());
                     showMsg("⏰ Anti-snipe! Gia hạn thêm " + SNIPE_EXTENSION_SECONDS + "s", true);
                 } else {
-                    // Dùng service để kiểm tra bid có phải của mình không
                     boolean isMyBid = service.isMyBid(res.getBidderId(), bidderId);
                     showMsg(isMyBid
                             ? "✓ Your bid was placed!"
                             : "⚡ Someone placed: " + service.formatMoney(res.getCurrentPrice()),
                             true);
                 }
-                // Reload bid history qua service
                 reloadBidHistory();
             } else {
                 if (auction != null && res.getCurrentPrice() != null) {
@@ -205,7 +234,6 @@ public class BidDetailController implements ServerResponseListener {
 
     private void handleSettled(JsonObject json) {
         AuctionSettledResponse settled = gson.fromJson(json, AuctionSettledResponse.class);
-        // Dùng service để kiểm tra — không tự so sánh trong controller
         if (!service.isCurrentAuction(settled.getAuctionId(), this.auctionId)) return;
 
         Platform.runLater(() -> {
@@ -217,7 +245,6 @@ public class BidDetailController implements ServerResponseListener {
                 updateAuctionStatus();
             }
 
-            // Cập nhật balance nếu thắng — dùng service
             if (settled.isWinner() && settled.getNewBalance() != null) {
                 User me = SessionManager.getInstance().getCurrentUser();
                 if (me != null) {
@@ -225,7 +252,6 @@ public class BidDetailController implements ServerResponseListener {
                     SessionManager.getInstance().setCurrentUser(me);
                 }
             } else {
-                // Reload user từ server để cập nhật frozen balance
                 String sessionId = SessionManager.getInstance().getSessionId();
                 int userId = SessionManager.getInstance().getCurrentUser().getId();
                 service.requestUserInfo(sessionId, userId);
@@ -276,16 +302,13 @@ public class BidDetailController implements ServerResponseListener {
     public void handlePlaceBid() {
         bidMsg.setText("");
         String text = bidInput.getText().trim();
+        User me     = SessionManager.getInstance().getCurrentUser();
 
-        User me = SessionManager.getInstance().getCurrentUser();
-
-        // Uỷ thác toàn bộ validation cho service
         BidDetailControllerService.BidValidationResult result =
                 service.validateBid(text, auction, me);
 
         if (!result.valid) {
             showMsg(result.errorMessage, false);
-            // Nếu auction đã kết thúc, cập nhật trạng thái
             if (auction != null && (result.errorMessage.contains("ended") ||
                     result.errorMessage.contains("not open"))) {
                 auction.setStatus(AuctionStatus.CLOSED);
@@ -294,7 +317,6 @@ public class BidDetailController implements ServerResponseListener {
             return;
         }
 
-        // Gửi bid qua service
         service.sendBidRequest(auctionId, bidderId, result.amount,
                 SessionManager.getInstance().getSessionId());
         bidInput.clear();

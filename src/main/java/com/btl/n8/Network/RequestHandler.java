@@ -11,6 +11,8 @@ import com.btl.n8.Model.Entity.User;
 import com.btl.n8.Model.Enums.AuctionStatus;
 import com.btl.n8.DTO.*;
 import com.btl.n8.Service.*;
+import com.btl.n8.Util.LocalDateTimeAdapter;
+import com.btl.n8.Util.UserTypeAdapter;
 import com.google.gson.*;
 
 import java.math.BigDecimal;
@@ -20,22 +22,22 @@ import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
-import com.btl.n8.Util.LocalDateTimeAdapter;
 
 public class RequestHandler {
 
     private final ClientHandler clientHandler;
     private final ConcurrentHashMap<String, ClientHandler> clients;
 
+    // FIX: thêm UserTypeAdapter để serialize/deserialize abstract class User đúng subclass
     private static final Gson gson = new GsonBuilder()
             .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
+            .registerTypeAdapter(User.class, new UserTypeAdapter())
             .create();
 
     private static final int SNIPE_WINDOW_SECONDS    = 30;
     private static final int SNIPE_EXTENSION_SECONDS = 30;
 
     // FIX concurrent: lock per-auctionId dùng chung toàn server (static)
-    // Đảm bảo chỉ 1 request bid vào 1 auction tại 1 thời điểm
     private static final ConcurrentHashMap<Integer, ReentrantLock> bidLocks =
             new ConcurrentHashMap<>();
 
@@ -50,7 +52,7 @@ public class RequestHandler {
         this.clientHandler = clientHandler;
         this.clients       = clients;
 
-        Connection tmpConn = null;
+        Connection     tmpConn    = null;
         AuctionService tmpAuction = null;
         UserService    tmpUser    = null;
         BidService     tmpBid     = null;
@@ -110,15 +112,12 @@ public class RequestHandler {
 
     public void handleBid(BidRequest req) {
         String sessionId = req.getSessionId();
-
         ReentrantLock lock = getBidLock(req.getAuctionId());
         lock.lock();
         try {
             _handleBidLocked(req, sessionId);
         } catch (Exception e) {
-            // Bắt mọi exception không mong đợi (SQLException từ broken connection, v.v.)
-            // để tránh crash ClientHandler → client bị mất kết nối
-            System.err.println("[BID ERROR] Unexpected exception: " + e.getClass().getName() + ": " + e.getMessage());
+            System.err.println("[BID ERROR] Unexpected: " + e.getClass().getName() + ": " + e.getMessage());
             e.printStackTrace();
             try {
                 send(new BidResponse("Lỗi hệ thống, vui lòng thử lại",
@@ -129,13 +128,8 @@ public class RequestHandler {
         }
     }
 
-    /**
-     * Xử lý bid sau khi đã giữ lock của auction.
-     * Tách ra method riêng cho dễ đọc.
-     */
     private void _handleBidLocked(BidRequest req, String sessionId) {
         try {
-            // Luôn lấy user mới nhất từ DB để balance/frozenBalance chính xác
             User sessionUser = ServerSessionManager.getInstance().getUser(sessionId);
             if (sessionUser == null) throw new AuthenticationException("Chưa đăng nhập");
 
@@ -143,8 +137,6 @@ public class RequestHandler {
             if (user == null) throw new AuthenticationException("Không tìm thấy user");
             ServerSessionManager.getInstance().refreshUser(sessionId, user);
 
-            // ═══════════════════════════════════════════════════════
-            // [DEBUG] In trạng thái user + request ngay khi vào bid
             System.out.println("\n[DEBUG-BID] ══════════════════════════════════");
             System.out.println("[DEBUG-BID] user      = " + user.getAccount() + " (id=" + user.getId() + ")");
             System.out.println("[DEBUG-BID] auctionId = " + req.getAuctionId());
@@ -153,17 +145,12 @@ public class RequestHandler {
             System.out.println("[DEBUG-BID] frozenBalance  = " + user.getFrozenBalance());
             System.out.println("[DEBUG-BID] availableBalance = " + user.getAvailableBalance());
 
-            // ═══════════════════════════════════════════════════════
-
             int        auctionId = req.getAuctionId();
             BigDecimal amount    = req.getAmount();
 
-            // Fetch auction mới nhất — QUAN TRỌNG: phải fetch SAU khi giữ lock
-            // để đọc currentPrice chính xác (người trước có thể vừa cập nhật)
             Auction auction = auctionService.getAuctionById(auctionId);
             if (auction == null) throw new InvalidBidException("Auction không tồn tại");
 
-            // FIX anti-sniping: lấy now SAU khi giữ lock để tính secondsLeft chính xác
             LocalDateTime now = LocalDateTime.now();
 
             if (now.isAfter(auction.getEndTime())) {
@@ -171,20 +158,16 @@ public class RequestHandler {
                 throw new AuctionClosedException("Phiên đấu giá đã kết thúc", auctionId);
             }
 
-            if (auction.getStatus() != AuctionStatus.OPEN) {
+            if (auction.getStatus() != AuctionStatus.OPEN)
                 throw new AuctionClosedException("Phiên đấu giá đã đóng", auctionId);
-            }
 
             if (amount.compareTo(auction.getCurrentPrice()) <= 0) {
                 throw new InvalidBidException(
                         "Giá phải cao hơn " + auction.getCurrentPrice(),
                         auction.getCurrentPrice().doubleValue(),
-                        amount.doubleValue()
-                );
+                        amount.doubleValue());
             }
 
-            // ── Frozen balance check ──────────────────────────────────────────
-            // Dùng getAvailableBalance() = balance - frozenBalance
             BigDecimal available = user.getAvailableBalance();
             if (amount.compareTo(available) > 0) {
                 Auction cur = auctionService.getAuctionById(auctionId);
@@ -200,19 +183,10 @@ public class RequestHandler {
                 return;
             }
 
-            // ── FREEZE: chỉ freeze phần CHÊNH LỆCH so với bid cũ ───────────
-            // Nếu user đang là highest bidder auction này và muốn nâng giá,
-            // phần cũ đã bị frozen rồi → chỉ cần freeze thêm phần chênh lệch.
-            // Tránh trường hợp: balance=200, frozen=100(bidX), bid thêm 120 cho itemY
-            // → available=100, đủ 120? Không. Đúng.
-            // Nhưng nếu nâng giá itemX từ 100→150: available=100, cần 150? Sai!
-            // Thực tế chỉ cần freeze thêm 50 (=150-100).
-            Bid existingBidInThisAuction = bidService.getActiveBidByBidder(auctionId, user.getId());
-            BigDecimal alreadyFrozenForThis = existingBidInThisAuction != null
-                    ? existingBidInThisAuction.getAmount() : BigDecimal.ZERO;
-            BigDecimal extraToFreeze = amount.subtract(alreadyFrozenForThis);
+            Bid existingBid = bidService.getActiveBidByBidder(auctionId, user.getId());
+            BigDecimal alreadyFrozen = existingBid != null ? existingBid.getAmount() : BigDecimal.ZERO;
+            BigDecimal extraToFreeze = amount.subtract(alreadyFrozen);
 
-            // Kiểm tra available có đủ để freeze thêm không
             if (extraToFreeze.compareTo(BigDecimal.ZERO) > 0
                     && extraToFreeze.compareTo(user.getAvailableBalance()) > 0) {
                 Auction cur = auctionService.getAuctionById(auctionId);
@@ -227,9 +201,9 @@ public class RequestHandler {
             }
 
             boolean frozen = true;
-            if (extraToFreeze.compareTo(BigDecimal.ZERO) > 0) {
+            if (extraToFreeze.compareTo(BigDecimal.ZERO) > 0)
                 frozen = userService.freezeBalance(user.getId(), extraToFreeze);
-            }
+
             if (!frozen) {
                 Auction cur = auctionService.getAuctionById(auctionId);
                 send(new BidResponse(
@@ -240,20 +214,11 @@ public class RequestHandler {
                 return;
             }
 
-            // ── Transaction: updatePrice + markOutbid + insertBid ─────────────
             boolean success = false;
-            Bid previousActiveBid = null;
-
             try {
                 System.out.println("[DEBUG-TXN] setAutoCommit(false)");
                 conn.setAutoCommit(false);
 
-                // Lấy bid ACTIVE cũ của chính user này trong auction (nếu đang tự nâng giá)
-                previousActiveBid = bidService.getActiveBidByBidder(auctionId, user.getId());
-                System.out.println("[DEBUG-TXN] previousActiveBid = "
-                        + (previousActiveBid != null ? previousActiveBid.getAmount() : "NONE"));
-
-                // 1. Cập nhật current_price
                 boolean auctionUpdated = auctionService.updateCurrentPrice(auctionId, amount);
                 System.out.println("[DEBUG-TXN] updateCurrentPrice → " + auctionUpdated);
                 if (!auctionUpdated) {
@@ -262,11 +227,9 @@ public class RequestHandler {
                     throw new AuctionClosedException("Đặt giá thất bại — phiên có thể đã kết thúc", auctionId);
                 }
 
-                // 2. Mark tất cả bid cũ là OUTBID
                 bidService.markAllOutbid(auctionId);
                 System.out.println("[DEBUG-TXN] markAllOutbid done");
 
-                // 3. Insert bid mới
                 Bid newBid = new Bid();
                 newBid.setAuctionId(auctionId);
                 newBid.setBidderId(user.getId());
@@ -287,32 +250,23 @@ public class RequestHandler {
                 success = true;
 
             } catch (java.sql.SQLException e) {
-                System.err.println("[DEBUG-TXN] *** SQLException trong transaction: " + e.getMessage());
-                System.err.println("[DEBUG-TXN] SQLState=" + e.getSQLState() + " ErrorCode=" + e.getErrorCode());
+                System.err.println("[DEBUG-TXN] SQLException: " + e.getMessage());
                 try { conn.rollback(); } catch (java.sql.SQLException ignored) {}
                 userService.unfreezeBalance(user.getId(), amount);
                 throw new InvalidBidException("Lỗi DB khi đặt giá: " + e.getMessage());
             } finally {
-                try {
-                    conn.setAutoCommit(true);
-                } catch (java.sql.SQLException e) {
-                    System.err.println("[DEBUG-TXN] *** setAutoCommit(true) THẤT BẠI: " + e.getMessage());
+                try { conn.setAutoCommit(true); } catch (java.sql.SQLException e) {
+                    System.err.println("[DEBUG-TXN] setAutoCommit(true) thất bại: " + e.getMessage());
                 }
             }
 
             if (!success) return;
 
-            // ── Unfreeze sau khi transaction commit thành công ────────────────
-            // Không cần unfreeze previousActiveBid vì đã chỉ freeze phần chênh lệch ở trên.
-            // Unfreeze cho tất cả bidder khác vừa bị outbid.
             bidService.unfreezeOutbidBalances(auctionId, user.getId(), userService);
 
-            // ── Anti-sniping ──────────────────────────────────────────────────
-            // FIX: fetch lại auction SAU transaction để có endTime chính xác
-            // rồi tính secondsLeft từ now (đã lấy sau lock) → không bị lệch
-            Auction updated = auctionService.getAuctionById(auctionId);
+            Auction updated    = auctionService.getAuctionById(auctionId);
             LocalDateTime newEndTime = null;
-            long secondsLeft = java.time.Duration.between(now, updated.getEndTime()).getSeconds();
+            long secondsLeft   = java.time.Duration.between(now, updated.getEndTime()).getSeconds();
             if (secondsLeft <= SNIPE_WINDOW_SECONDS) {
                 newEndTime = auctionService.extendEndTime(auctionId, SNIPE_EXTENSION_SECONDS);
                 if (newEndTime != null)
@@ -335,8 +289,7 @@ public class RequestHandler {
                     false, req.getAuctionId(), BigDecimal.ZERO, null, -1));
 
         } catch (AuctionClosedException e) {
-            System.err.println("[AuctionClosedException] auctionId=" + e.getAuctionId()
-                    + " - " + e.getMessage());
+            System.err.println("[AuctionClosedException] auctionId=" + e.getAuctionId() + " - " + e.getMessage());
             Auction cur = auctionService.getAuctionById(e.getAuctionId());
             send(new BidResponse(e.getMessage(), sessionId,
                     false, e.getAuctionId(),
@@ -373,7 +326,10 @@ public class RequestHandler {
                     req.getName(), req.getType().name(),
                     req.getSellerId(), imageBytes);
             boolean itemOk = itemService.addItem(item);
-            if (!itemOk) { send(new AddItemResponse("Tạo item thất bại", req.getSessionId(), false, -1, -1, null)); return; }
+            if (!itemOk) {
+                send(new AddItemResponse("Tạo item thất bại", req.getSessionId(), false, -1, -1, null));
+                return;
+            }
 
             Auction auction = new Auction(0, item.getId(),
                     req.getStartingPrice(), req.getStartingPrice(),
@@ -397,9 +353,9 @@ public class RequestHandler {
             if (user == null) throw new AuthenticationException("Not authenticated");
 
             Auction auction = auctionService.getAuctionById(req.getAuctionId());
-            if (auction == null || auction.getStatus() != AuctionStatus.OPEN) {
+            if (auction == null || auction.getStatus() != AuctionStatus.OPEN)
                 throw new AuctionClosedException("Auction not open", req.getAuctionId());
-            }
+
             send(new AutoBidResponse("AutoBid registered", req.getSessionId(),
                     true, req.getAuctionId(), req.getMaxPrice(), req.getStep(),
                     false, 0, true));
@@ -419,15 +375,8 @@ public class RequestHandler {
         }
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // ── DEPOSIT ───────────────────────────────────────────────────────────────
 
-    private void send(Object obj)          { clientHandler.send(gson.toJson(obj)); }
-    private void broadcastAll(String json) {
-        System.out.println("[BROADCAST] tới " + clients.size() + " clients: " + json.substring(0, Math.min(80, json.length())));
-        for (ClientHandler c : clients.values()) c.send(json);
-    }
-
-    // ── DEPOSIT ───────────────────────────────────────────────────────────────────
     public void handleDeposit(DepositRequest req) {
         try {
             User user = ServerSessionManager.getInstance().getUser(req.getSessionId());
@@ -445,14 +394,15 @@ public class RequestHandler {
         }
     }
 
-    // ── UPGRADE_SELLER ────────────────────────────────────────────────────────────
+    // ── UPGRADE_SELLER ────────────────────────────────────────────────────────
+
     public void handleUpgradeSeller(UpgradeSellerRequest req) {
         try {
             User user = ServerSessionManager.getInstance().getUser(req.getSessionId());
             if (user == null) throw new AuthenticationException("Chưa đăng nhập");
 
-            boolean ok = userService.upgradeToSeller(req.getUserId());
-            User updated = ok ? userService.getUserById(req.getUserId()) : null;
+            boolean ok      = userService.upgradeToSeller(req.getUserId());
+            User    updated = ok ? userService.getUserById(req.getUserId()) : null;
             if (ok && updated != null)
                 ServerSessionManager.getInstance().updateUser(req.getSessionId(), updated);
 
@@ -464,7 +414,8 @@ public class RequestHandler {
         }
     }
 
-    // ── GET_USER_BIDS ─────────────────────────────────────────────────────────────
+    // ── GET_USER_BIDS ─────────────────────────────────────────────────────────
+
     public void handleGetUserBids(GetUserBidsRequest req) {
         try {
             User user = ServerSessionManager.getInstance().getUser(req.getSessionId());
@@ -477,7 +428,8 @@ public class RequestHandler {
         }
     }
 
-    // ── GET_SELLER_ITEMS ──────────────────────────────────────────────────────────
+    // ── GET_SELLER_ITEMS ──────────────────────────────────────────────────────
+
     public void handleGetSellerItems(GetSellerItemsRequest req) {
         try {
             User user = ServerSessionManager.getInstance().getUser(req.getSessionId());
@@ -495,14 +447,14 @@ public class RequestHandler {
         }
     }
 
-    // ── GET_AUCTION_LIST ──────────────────────────────────────────────────────────
+    // ── GET_AUCTION_LIST ──────────────────────────────────────────────────────
+
     public void handleGetAuctionList(GetAuctionListRequest req) {
         try {
             User user = ServerSessionManager.getInstance().getUser(req.getSessionId());
             if (user == null) throw new AuthenticationException("Chưa đăng nhập");
 
-            // Đóng các auction hết giờ và lấy danh sách qua AuctionService (không gọi DAO trực tiếp)
-            List<com.btl.n8.DTO.ItemAuctionRow> joined = auctionService.getAuctionList();
+            List<ItemAuctionRow> joined = auctionService.getAuctionList();
 
             List<GetAuctionListResponse.AuctionRow> rows = joined.stream()
                     .map(r -> new GetAuctionListResponse.AuctionRow(
@@ -516,23 +468,40 @@ public class RequestHandler {
         }
     }
 
-    // ── GET_AUCTION_DETAIL ────────────────────────────────────────────────────────
+    // ── GET_AUCTION_DETAIL ────────────────────────────────────────────────────
+    // FIX: trả kèm itemName, itemType và imageBase64 để client hiển thị ảnh đúng
+
     public void handleGetAuctionDetail(GetAuctionDetailRequest req) {
         try {
             User user = ServerSessionManager.getInstance().getUser(req.getSessionId());
             if (user == null) throw new AuthenticationException("Chưa đăng nhập");
 
-            Auction auction  = auctionService.getAuctionById(req.getAuctionId());
-            List<Bid> bids   = bidService.getBidsByAuction(req.getAuctionId());
+            Auction   auction = auctionService.getAuctionById(req.getAuctionId());
+            List<Bid> bids    = bidService.getBidsByAuction(req.getAuctionId());
 
-            send(new GetAuctionDetailResponse("OK", req.getSessionId(),
-                    auction != null, auction, bids));
+            GetAuctionDetailResponse resp = new GetAuctionDetailResponse(
+                    "OK", req.getSessionId(), auction != null, auction, bids);
+
+            // Lấy thông tin Item (tên, loại, ảnh) và đính kèm vào response
+            if (auction != null) {
+                Item item = itemService.getItemById(auction.getItemId());
+                if (item != null) {
+                    String imageBase64 = null;
+                    if (item.getImage() != null && item.getImage().length > 0) {
+                        imageBase64 = Base64.getEncoder().encodeToString(item.getImage());
+                    }
+                    resp.withItem(item.getName(), item.getType().name(), imageBase64);
+                }
+            }
+
+            send(resp);
         } catch (AuthenticationException e) {
             send(new GetAuctionDetailResponse(e.getMessage(), null, false, null, null));
         }
     }
 
-    // ── ADMIN_* ───────────────────────────────────────────────────────────────────
+    // ── ADMIN_* ───────────────────────────────────────────────────────────────
+
     public void handleAdmin(AdminRequest req) {
         try {
             User user = ServerSessionManager.getInstance().getUser(req.getSessionId());
@@ -540,8 +509,7 @@ public class RequestHandler {
             if (user.getRole() != com.btl.n8.Model.Enums.Role.ADMIN)
                 throw new AuthenticationException("Không có quyền Admin");
 
-            AdminService adminService = ServiceFactory
-                    .createAdminService(conn);
+            AdminService adminService = ServiceFactory.createAdminService(conn);
             String sid = req.getSessionId();
 
             switch (req.getAction()) {
@@ -589,5 +557,15 @@ public class RequestHandler {
         } catch (AuthenticationException e) {
             send(new AdminResponse("ADMIN_RESULT", e.getMessage(), null, false));
         }
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private void send(Object obj) { clientHandler.send(gson.toJson(obj)); }
+
+    private void broadcastAll(String json) {
+        System.out.println("[BROADCAST] tới " + clients.size() + " clients: "
+                + json.substring(0, Math.min(80, json.length())));
+        for (ClientHandler c : clients.values()) c.send(json);
     }
 }
