@@ -82,6 +82,8 @@ public class ClientHandler implements Runnable {
                                 gson.fromJson(json, UpgradeSellerRequest.class));
                         case "GET_USER_BIDS"    -> requestHandler.handleGetUserBids(
                                 gson.fromJson(json, GetUserBidsRequest.class));
+                        case "GET_USER_BALANCE" -> requestHandler.handleGetUserBalance(
+                                gson.fromJson(json, GetUserBalanceRequest.class));
                         case "GET_SELLER_ITEMS" -> requestHandler.handleGetSellerItems(
                                 gson.fromJson(json, GetSellerItemsRequest.class));
                         case "GET_AUCTION_LIST"   -> requestHandler.handleGetAuctionList(

@@ -428,6 +428,35 @@ public class RequestHandler {
         }
     }
 
+    // ── GET_USER_BALANCE ──────────────────────────────────────────────────────
+
+    /**
+     * Trả về balance + frozenBalance mới nhất của user từ DB.
+     * Client gọi sau AUCTION_SETTLED để lấy balance sau khi unfreeze.
+     * KHÔNG được đọc từ SessionManager (có thể stale) — phải query DB.
+     */
+    public void handleGetUserBalance(GetUserBalanceRequest req) {
+        try {
+            User sessionUser = ServerSessionManager.getInstance().getUser(req.getSessionId());
+            if (sessionUser == null) throw new AuthenticationException("Chưa đăng nhập");
+
+            // Reload user từ DB để lấy balance chính xác sau unfreeze
+            User freshUser = userService.getUserById(req.getUserId());
+            if (freshUser == null) throw new AuthenticationException("Không tìm thấy user");
+
+            // Cập nhật lại session với dữ liệu mới nhất
+            ServerSessionManager.getInstance().refreshUser(req.getSessionId(), freshUser);
+
+            send(new GetUserBalanceResponse(
+                    req.getSessionId(), true,
+                    freshUser.getBalance(),
+                    freshUser.getFrozenBalance() != null ? freshUser.getFrozenBalance() : BigDecimal.ZERO,
+                    "OK"));
+        } catch (AuthenticationException e) {
+            send(new GetUserBalanceResponse(null, false, null, null, e.getMessage()));
+        }
+    }
+
     // ── GET_SELLER_ITEMS ──────────────────────────────────────────────────────
 
     public void handleGetSellerItems(GetSellerItemsRequest req) {

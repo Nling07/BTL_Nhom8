@@ -122,6 +122,7 @@ public class BidDetailController implements ServerResponseListener {
             case "AUCTION_DETAIL_RESULT" -> handleDetailResult(response);
             case "BID_UPDATE"            -> handleBidUpdate(response);
             case "AUCTION_SETTLED"       -> handleSettled(response);
+            case "USER_BALANCE_RESULT"   -> handleBalanceResult(response);
         }
     }
 
@@ -207,8 +208,8 @@ public class BidDetailController implements ServerResponseListener {
                 } else {
                     boolean isMyBid = service.isMyBid(res.getBidderId(), bidderId);
                     showMsg(isMyBid
-                            ? "✓ Your bid was placed!"
-                            : "⚡ Someone placed: " + service.formatMoney(res.getCurrentPrice()),
+                                    ? "✓ Your bid was placed!"
+                                    : "⚡ Someone placed: " + service.formatMoney(res.getCurrentPrice()),
                             true);
                 }
                 reloadBidHistory();
@@ -254,8 +255,12 @@ public class BidDetailController implements ServerResponseListener {
             } else {
                 String sessionId = SessionManager.getInstance().getSessionId();
                 int userId = SessionManager.getInstance().getCurrentUser().getId();
-                service.requestUserInfo(sessionId, userId);
+                service.requestUserBalance(sessionId, userId);
             }
+
+            // Notify các Controller khác (HomeController, v.v.) cập nhật balance + danh sách
+            AppEventBus.publish(AppEventBus.BALANCE_UPDATED, null);
+            AppEventBus.publish(AppEventBus.AUCTION_SETTLED, settled.getAuctionId());
 
             if (settled.getWinnerId() == -1) {
                 showSettledDialog("Phiên đấu giá kết thúc",
@@ -270,6 +275,30 @@ public class BidDetailController implements ServerResponseListener {
                                 settled.getWinnerAccount(),
                                 service.formatMoney(settled.getWinningPrice())), false);
             }
+        });
+    }
+
+    // ── Balance result ────────────────────────────────────────────────────────
+
+    /**
+     * Nhận USER_BALANCE_RESULT từ server sau khi gọi GET_USER_BALANCE.
+     * Cập nhật SessionManager với balance mới nhất (sau unfreeze), rồi
+     * notify HomeController qua AppEventBus để refresh label balance.
+     */
+    private void handleBalanceResult(JsonObject json) {
+        com.btl.n8.DTO.GetUserBalanceResponse res =
+                gson.fromJson(json, com.btl.n8.DTO.GetUserBalanceResponse.class);
+        if (!res.isSuccess()) return;
+
+        Platform.runLater(() -> {
+            User me = SessionManager.getInstance().getCurrentUser();
+            if (me != null && res.getBalance() != null) {
+                me.setBalance(res.getBalance());
+                me.setFrozenBalance(res.getFrozenBalance());
+                SessionManager.getInstance().setCurrentUser(me);
+            }
+            // Notify HomeController (và bất kỳ ai subscribe) refresh balance
+            AppEventBus.publish(AppEventBus.BALANCE_UPDATED, null);
         });
     }
 

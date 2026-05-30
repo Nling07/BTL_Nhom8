@@ -27,6 +27,7 @@ import javafx.stage.Stage;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Optional;
+import java.util.function.Consumer;
 
 public class HomeController implements ServerResponseListener {
 
@@ -39,10 +40,16 @@ public class HomeController implements ServerResponseListener {
             .registerTypeAdapter(User.class, new UserTypeAdapter())
             .create();
 
+    // Handler tham chiếu rõ để unsubscribe khi navigate đi
+    private final Consumer<Object> onBalanceUpdated = e -> refreshBalance();
+
     @FXML
     public void initialize() {
         if (!SessionManager.getInstance().isLoggedIn()) return;
         ClientSocket.getInstance().addListener(this);
+        // Lắng nghe BALANCE_UPDATED từ AppEventBus:
+        // tự động refresh ngay khi settle / deposit / unfreeze xảy ra
+        AppEventBus.subscribe(AppEventBus.BALANCE_UPDATED, onBalanceUpdated);
         refreshBalance();
         updateBecomeSellerVisibility();
     }
@@ -86,6 +93,11 @@ public class HomeController implements ServerResponseListener {
                                         : "Không thể nâng cấp tài khoản");
                     }
                 });
+            }
+            case "AUCTION_SETTLED" -> {
+                // Một phiên đấu giá kết thúc → có thể balance đã unfreeze (nếu user là loser)
+                // Phát BALANCE_UPDATED để trigger refreshBalance() qua EventBus
+                AppEventBus.publish(AppEventBus.BALANCE_UPDATED, null);
             }
         }
     }
@@ -171,6 +183,7 @@ public class HomeController implements ServerResponseListener {
 
     public void logout(ActionEvent event) throws Exception {
         ClientSocket.getInstance().removeListener(this);
+        AppEventBus.unsubscribe(AppEventBus.BALANCE_UPDATED, onBalanceUpdated);
         AutoBidManager.getInstance().cancelAll();
         SessionManager.getInstance().logout();
         SessionManager.getInstance().setCurrentUser(null);
@@ -197,6 +210,7 @@ public class HomeController implements ServerResponseListener {
 
     private void navigateTo(ActionEvent event, String fxml) throws Exception {
         ClientSocket.getInstance().removeListener(this);
+        AppEventBus.unsubscribe(AppEventBus.BALANCE_UPDATED, onBalanceUpdated);
         Parent root = FXMLLoader.load(getClass().getResource(fxml));
         Stage stage = (Stage) ((Node) event.getSource()).getScene().getWindow();
         stage.setScene(new Scene(root));

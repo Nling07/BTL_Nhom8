@@ -2,6 +2,7 @@ package com.btl.n8.Service;
 
 import com.btl.n8.DTO.BidRequest;
 import com.btl.n8.DTO.GetAuctionDetailRequest;
+import com.btl.n8.DTO.GetUserBalanceRequest;
 import com.btl.n8.DTO.GetUserBidsRequest;
 import com.btl.n8.Model.Entity.Auction;
 import com.btl.n8.Model.Entity.User;
@@ -27,10 +28,11 @@ public class BidDetailControllerService {
     }
 
     /**
-     * Gửi request reload thông tin user (để cập nhật balance / frozen balance).
+     * Gửi request lấy balance mới nhất từ server (sau unfreeze / settle).
+     * Dùng GET_USER_BALANCE — server reload từ DB và trả về USER_BALANCE_RESULT.
      */
-    public void requestUserInfo(String sessionId, int userId) {
-        ClientSocket.getInstance().sendMessage(new GetUserBidsRequest(sessionId, userId));
+    public void requestUserBalance(String sessionId, int userId) {
+        ClientSocket.getInstance().sendMessage(new GetUserBalanceRequest(sessionId, userId));
     }
 
     // ── Validate bid ──────────────────────────────────────────────────────────

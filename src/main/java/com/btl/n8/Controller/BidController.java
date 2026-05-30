@@ -108,6 +108,9 @@ public class BidController implements ServerResponseListener {
                             row.setPrice(String.format("%,.0f ₫", res.getCurrentPrice()));
                             row.setStatus("OPEN");
                             allItems.set(i, row);
+                            // Force TableView re-render — SimpleStringProperty đôi khi
+                            // không trigger refresh tự động khi set cùng row reference
+                            itemTable.refresh();
                             break;
                         }
                     }
