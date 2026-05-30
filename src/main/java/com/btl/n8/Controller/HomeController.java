@@ -2,6 +2,8 @@ package com.btl.n8.Controller;
 
 import com.btl.n8.DTO.DepositRequest;
 import com.btl.n8.DTO.DepositResponse;
+import com.btl.n8.DTO.GetUserBalanceRequest;
+import com.btl.n8.DTO.GetUserBalanceResponse;
 import com.btl.n8.DTO.UpgradeSellerRequest;
 import com.btl.n8.DTO.UpgradeSellerResponse;
 import com.btl.n8.Model.Entity.User;
@@ -34,7 +36,6 @@ public class HomeController implements ServerResponseListener {
     @FXML private Label  balanceLabel;
     @FXML private Button becomeSellerBtn;
 
-    // FIX: thêm UserTypeAdapter để deserialize UpgradeSellerResponse.updatedUser (abstract User)
     private static final Gson gson = new GsonBuilder()
             .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
             .registerTypeAdapter(User.class, new UserTypeAdapter())
@@ -47,8 +48,6 @@ public class HomeController implements ServerResponseListener {
     public void initialize() {
         if (!SessionManager.getInstance().isLoggedIn()) return;
         ClientSocket.getInstance().addListener(this);
-        // Lắng nghe BALANCE_UPDATED từ AppEventBus:
-        // tự động refresh ngay khi settle / deposit / unfreeze xảy ra
         AppEventBus.subscribe(AppEventBus.BALANCE_UPDATED, onBalanceUpdated);
         refreshBalance();
         updateBecomeSellerVisibility();
@@ -79,7 +78,6 @@ public class HomeController implements ServerResponseListener {
             }
 
             case "UPGRADE_SELLER_RESULT" -> {
-                // FIX: UpgradeSellerResponse chứa User (abstract) → cần UserTypeAdapter
                 UpgradeSellerResponse res = gson.fromJson(json, UpgradeSellerResponse.class);
                 Platform.runLater(() -> {
                     if (res.isSuccess() && res.getUpdatedUser() != null) {
@@ -94,10 +92,31 @@ public class HomeController implements ServerResponseListener {
                     }
                 });
             }
+
             case "AUCTION_SETTLED" -> {
-                // Một phiên đấu giá kết thúc → có thể balance đã unfreeze (nếu user là loser)
-                // Phát BALANCE_UPDATED để trigger refreshBalance() qua EventBus
-                AppEventBus.publish(AppEventBus.BALANCE_UPDATED, null);
+                // Phiên kết thúc → hỏi server balance mới nhất (sau unfreeze)
+                // KHÔNG đọc SessionManager vì stale — phải query DB qua socket
+                User me = SessionManager.getInstance().getCurrentUser();
+                String sid = SessionManager.getInstance().getSessionId();
+                if (me != null && sid != null) {
+                    ClientSocket.getInstance().sendMessage(
+                            new GetUserBalanceRequest(sid, me.getId()));
+                }
+            }
+
+            case "USER_BALANCE_RESULT" -> {
+                // Server trả về balance mới nhất → cập nhật SessionManager rồi refresh label
+                GetUserBalanceResponse res = gson.fromJson(json, GetUserBalanceResponse.class);
+                if (!res.isSuccess()) return;
+                Platform.runLater(() -> {
+                    User me = SessionManager.getInstance().getCurrentUser();
+                    if (me != null && res.getBalance() != null) {
+                        me.setBalance(res.getBalance());
+                        me.setFrozenBalance(res.getFrozenBalance());
+                        SessionManager.getInstance().setCurrentUser(me);
+                    }
+                    refreshBalance();
+                });
             }
         }
     }
