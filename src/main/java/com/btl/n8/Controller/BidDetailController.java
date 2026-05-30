@@ -59,6 +59,7 @@ public class BidDetailController implements ServerResponseListener {
     private int     auctionId;
     private int     bidderId;
     private Auction auction;
+    private String  cachedItemName;
     private Timer   countdownTimer;
 
     private Stage             autoBidStage;
@@ -145,6 +146,7 @@ public class BidDetailController implements ServerResponseListener {
             // FIX: hiển thị tên và loại sản phẩm (trước đây luôn là placeholder)
             if (res.getItemName() != null) {
                 itemName.setText(res.getItemName());
+                cachedItemName = res.getItemName();
             }
             if (res.getItemType() != null) {
                 itemType.setText(res.getItemType());
@@ -286,8 +288,8 @@ public class BidDetailController implements ServerResponseListener {
      * notify HomeController qua AppEventBus để refresh label balance.
      */
     private void handleBalanceResult(JsonObject json) {
-        com.btl.n8.DTO.GetUserBalanceResponse res =
-                gson.fromJson(json, com.btl.n8.DTO.GetUserBalanceResponse.class);
+        GetUserBalanceResponse res =
+                gson.fromJson(json, GetUserBalanceResponse.class);
         if (!res.isSuccess()) return;
 
         Platform.runLater(() -> {
@@ -432,7 +434,7 @@ public class BidDetailController implements ServerResponseListener {
             FXMLLoader loader = new FXMLLoader(getClass().getResource("/fxml/AutoBid.fxml"));
             Parent root = loader.load();
             autoBidCtrl = loader.getController();
-            autoBidCtrl.initData(auctionId, null, auction);
+            autoBidCtrl.initData(auctionId, cachedItemName, auction);
             autoBidCtrl.setOnActiveChanged(active -> Platform.runLater(() -> {
                 if (active) setAutoBidButtonActive();
                 else        setAutoBidButtonDefault();

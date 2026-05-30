@@ -225,8 +225,8 @@ public class AutoBidManager implements ServerResponseListener {
 
         // Kiểm tra balance: nextBid không được vượt balance hiện tại
         com.btl.n8.Model.Entity.User currentUser = SessionManager.getInstance().getCurrentUser();
-        BigDecimal balance = currentUser != null && currentUser.getBalance() != null
-                ? currentUser.getBalance() : BigDecimal.ZERO;
+        BigDecimal balance = currentUser != null && currentUser.getAvailableBalance() != null
+                ? currentUser.getAvailableBalance() : BigDecimal.ZERO;
         if (nextBid.compareTo(balance) > 0) {
             cancelSilent(session.auctionId);
             notifyUI(session.auctionId, "STOPPED:Số dư không đủ để tiếp tục AutoBid – Đã dừng.");

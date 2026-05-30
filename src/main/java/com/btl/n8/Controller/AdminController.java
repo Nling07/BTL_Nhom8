@@ -8,6 +8,7 @@ import com.btl.n8.Model.Entity.User;
 import com.btl.n8.Model.Enums.AuctionStatus;
 import com.btl.n8.Network.ClientSocket;
 import com.btl.n8.Network.ServerResponseListener;
+import com.btl.n8.Util.ItemTypeAdapter;
 import com.btl.n8.Util.LocalDateTimeAdapter;
 import com.btl.n8.Util.UserTypeAdapter;
 import com.google.gson.Gson;
@@ -61,6 +62,7 @@ public class AdminController implements ServerResponseListener {
     private static final Gson gson = new GsonBuilder()
             .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
             .registerTypeAdapter(User.class, new UserTypeAdapter())
+            .registerTypeAdapter(Item.class, new ItemTypeAdapter())  // THÊM DÒNG NÀY
             .create();
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────

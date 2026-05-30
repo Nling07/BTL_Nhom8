@@ -39,7 +39,8 @@ public class UserService {
         if (password == null || password.isBlank()) return false;
         if (ADMIN_ACCOUNT.equalsIgnoreCase(account)) return false;
         if (userDAO.findByAccount(account) != null) return false;
-        return userDAO.insert(new Bidder(0, account, password, BigDecimal.ZERO));
+        // FIX: bỏ id=0 — dùng constructor không truyền id để DB tự AUTO_INCREMENT
+        return userDAO.insert(new Bidder(account, password, BigDecimal.ZERO));
     }
 
     // ── Nâng cấp lên Seller ───────────────────────────────────────────────────
@@ -66,33 +67,18 @@ public class UserService {
 
     // ── Frozen balance ────────────────────────────────────────────────────────
 
-    /**
-     * Khóa tiền khi người dùng đặt giá mới (trước khi ghi bid vào DB).
-     * Trả về false nếu available_balance không đủ → từ chối bid.
-     */
     public boolean freezeBalance(int userId, BigDecimal amount) {
         return userDAO.freezeBalance(userId, amount);
     }
 
-    /**
-     * Giải phóng tiền đã khóa khi bid cũ bị outbid.
-     * oldAmount = giá bid cũ của user ở auction này (lấy từ bid record).
-     */
     public boolean unfreezeBalance(int userId, BigDecimal amount) {
         return userDAO.unfreezeBalance(userId, amount);
     }
 
-    /**
-     * Khi thắng đấu giá: trừ balance thật và giải phóng frozen cùng lúc.
-     */
     public boolean settleWinner(int userId, BigDecimal amount) {
         return userDAO.settleWinner(userId, amount);
     }
 
-    /**
-     * [FIX] Cộng tiền bán hàng vào balance của seller.
-     * Được gọi từ SettlementHandler sau khi auction kết thúc có người thắng.
-     */
     public boolean creditSeller(int sellerId, BigDecimal amount) {
         return userDAO.creditSeller(sellerId, amount);
     }

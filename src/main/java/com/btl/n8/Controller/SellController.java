@@ -2,12 +2,17 @@ package com.btl.n8.Controller;
 
 import com.btl.n8.DTO.AddItemRequest;
 import com.btl.n8.DTO.AddItemResponse;
+import com.btl.n8.DTO.GetSellerItemsRequest;
+import com.btl.n8.DTO.GetSellerItemsResponse;
+import com.btl.n8.Model.Entity.Auction;
+import com.btl.n8.Model.Entity.Item;
 import com.btl.n8.Model.Entity.User;
 import com.btl.n8.Model.Enums.ItemType;
 import com.btl.n8.Model.Enums.Role;
 import com.btl.n8.Network.ClientSocket;
 import com.btl.n8.Network.ServerResponseListener;
 import com.btl.n8.Util.FileUtils;
+import com.btl.n8.Util.ItemTypeAdapter;
 import com.btl.n8.Util.LocalDateTimeAdapter;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -50,13 +55,17 @@ public class SellController implements ServerResponseListener {
     @FXML private TableColumn<SellRow, String>    colCurrentPrice;
     @FXML private TableColumn<SellRow, String>    colStatus;
 
-    private File selectedImage;
+    private File   selectedImage;
     private Button submitBtn;
     private final ObservableList<SellRow> myItems = FXCollections.observableArrayList();
 
+    // FIX: thêm ItemTypeAdapter để deserialize List<Item> trong GetSellerItemsResponse
     private static final Gson gson = new GsonBuilder()
             .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
+            .registerTypeAdapter(Item.class, new ItemTypeAdapter())
             .create();
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     @FXML
     public void initialize() {
@@ -83,14 +92,12 @@ public class SellController implements ServerResponseListener {
         typeCombo.setItems(FXCollections.observableArrayList("POSTER", "FIGURE", "CARD"));
 
         hoursSpinner.setValueFactory(
-                new javafx.scene.control.SpinnerValueFactory
-                        .IntegerSpinnerValueFactory(0, 48, 1));
+                new SpinnerValueFactory.IntegerSpinnerValueFactory(0, 48, 1));
         hoursSpinner.setEditable(true);
 
         minutesSpinner.setValueFactory(
-                new javafx.scene.control.SpinnerValueFactory
-                        .ListSpinnerValueFactory<>(
-                        javafx.collections.FXCollections.observableArrayList(0, 30)));
+                new SpinnerValueFactory.ListSpinnerValueFactory<>(
+                        FXCollections.observableArrayList(0, 30)));
         minutesSpinner.setEditable(false);
 
         colId          .setCellValueFactory(new PropertyValueFactory<>("id"));
@@ -102,6 +109,17 @@ public class SellController implements ServerResponseListener {
         myItemTable.setItems(myItems);
 
         ClientSocket.getInstance().addListener(this);
+
+        // FIX: load danh sách sản phẩm của seller ngay khi mở màn hình
+        loadMyItems(user.getId());
+    }
+
+    // ── Load danh sách sản phẩm ───────────────────────────────────────────────
+
+    private void loadMyItems(int sellerId) {
+        String sessionId = SessionManager.getInstance().getSessionId();
+        ClientSocket.getInstance().sendMessage(
+                new GetSellerItemsRequest(sessionId, sellerId));
     }
 
     // ── ServerResponseListener ────────────────────────────────────────────────
@@ -109,23 +127,52 @@ public class SellController implements ServerResponseListener {
     @Override
     public void onRespone(JsonObject json) {
         if (!json.has("action")) return;
-        if (!"ADD_ITEM_SUCCESS".equals(json.get("action").getAsString())) return;
 
-        AddItemResponse res = gson.fromJson(json, AddItemResponse.class);
-        Platform.runLater(() -> {
-            if (submitBtn != null) submitBtn.setDisable(false);
-            if (res.isSuccess()) {
-                // Thêm row mới vào bảng từ thông tin đã gửi
-                nameField.clear();
-                typeCombo.setValue(null);
-                priceField.clear();
-                uploadLabel.setText("");
-                selectedImage = null;
-                showSuccess("Đăng bán thành công!");
-            } else {
-                showError(res.getMessage() != null ? res.getMessage() : "Đăng bán thất bại");
+        switch (json.get("action").getAsString()) {
+
+            // FIX: thêm case xử lý danh sách sản phẩm trả về từ server
+            case "SELLER_ITEMS_RESULT" -> {
+                GetSellerItemsResponse res = gson.fromJson(json, GetSellerItemsResponse.class);
+                Platform.runLater(() -> {
+                    if (!res.isSuccess() || res.getItems() == null) return;
+                    myItems.clear();
+                    for (Item item : res.getItems()) {
+                        Auction auction = res.getAuctions() == null ? null :
+                                res.getAuctions().stream()
+                                .filter(a -> a.getItemId() == item.getId())
+                                .findFirst().orElse(null);
+                        myItems.add(new SellRow(
+                                item.getId(),
+                                item.getName(),
+                                item.getType().name(),
+                                auction != null ? fmt(auction.getStartingPrice()) : "-",
+                                auction != null ? fmt(auction.getCurrentPrice())  : "-",
+                                auction != null ? auction.getStatus().name()       : "NO AUCTION"
+                        ));
+                    }
+                });
             }
-        });
+
+            case "ADD_ITEM_SUCCESS" -> {
+                AddItemResponse res = gson.fromJson(json, AddItemResponse.class);
+                Platform.runLater(() -> {
+                    if (submitBtn != null) submitBtn.setDisable(false);
+                    if (res.isSuccess()) {
+                        nameField.clear();
+                        typeCombo.setValue(null);
+                        priceField.clear();
+                        uploadLabel.setText("");
+                        selectedImage = null;
+                        showSuccess("Đăng bán thành công!");
+                        // FIX: reload lại bảng sau khi đăng bán thành công
+                        User user = SessionManager.getInstance().getCurrentUser();
+                        if (user != null) loadMyItems(user.getId());
+                    } else {
+                        showError(res.getMessage() != null ? res.getMessage() : "Đăng bán thất bại");
+                    }
+                });
+            }
+        }
     }
 
     // ── Upload ────────────────────────────────────────────────────────────────
@@ -180,17 +227,19 @@ public class SellController implements ServerResponseListener {
 
         new Thread(() -> {
             try {
-                byte[]   imageBytes   = FileUtils.toByteArray(selectedImage);
+                byte[] imageBytes = FileUtils.toByteArray(selectedImage);
                 if (imageBytes == null) {
-                    Platform.runLater(() -> { showError("Lỗi đọc file ảnh"); submitBtn.setDisable(false); });
+                    Platform.runLater(() -> {
+                        showError("Lỗi đọc file ảnh");
+                        submitBtn.setDisable(false);
+                    });
                     return;
                 }
                 String imageBase64 = Base64.getEncoder().encodeToString(imageBytes);
 
-                User   user      = SessionManager.getInstance().getCurrentUser();
-                String sessionId = SessionManager.getInstance().getSessionId();
-                ItemType itemType = ItemType.valueOf(typeStr);
-
+                User          user      = SessionManager.getInstance().getCurrentUser();
+                String        sessionId = SessionManager.getInstance().getSessionId();
+                ItemType      itemType  = ItemType.valueOf(typeStr);
                 LocalDateTime startTime = LocalDateTime.now();
                 LocalDateTime endTime   = startTime.plusHours(hours).plusMinutes(minutes);
 
@@ -234,6 +283,11 @@ public class SellController implements ServerResponseListener {
         messageLabel.setText(msg);
     }
 
+    private String fmt(BigDecimal n) {
+        if (n == null) return "-";
+        return String.format("%,.0f ₫", n);
+    }
+
     // ── Inner class ───────────────────────────────────────────────────────────
 
     public static class SellRow {
@@ -242,9 +296,12 @@ public class SellController implements ServerResponseListener {
 
         public SellRow(int id, String name, String type,
                        String startPrice, String currentPrice, String status) {
-            this.id = id; this.name = name; this.type = type;
-            this.startPrice = startPrice; this.currentPrice = currentPrice;
-            this.status = status;
+            this.id           = id;
+            this.name         = name;
+            this.type         = type;
+            this.startPrice   = startPrice;
+            this.currentPrice = currentPrice;
+            this.status       = status;
         }
 
         public int    getId()           { return id; }

@@ -1,7 +1,6 @@
 package com.btl.n8.Controller;
 
 import com.btl.n8.Model.Entity.Auction;
-import com.btl.n8.Model.Entity.Item;
 import com.btl.n8.Util.LocalDateTimeAdapter;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -39,7 +38,6 @@ public class AutoBidController {
     // ── State ─────────────────────────────────────────────────────────────────
     private int     auctionId;
     private Auction auction;
-    private Item    item;
 
     private Consumer<Boolean> onActiveChanged;
 
@@ -53,12 +51,11 @@ public class AutoBidController {
         this.onActiveChanged = cb;
     }
 
-    public void initData(int auctionId, Item item, Auction auction) {
+    public void initData(int auctionId, String itemName, Auction auction) {
         this.auctionId = auctionId;
-        this.item      = item;
         this.auction   = auction;
 
-        lblItemName.setText(item.getName());
+        lblItemName.setText(itemName != null ? itemName : "Auction #" + auctionId);
         if (auction != null) lblCurrentPrice.setText(fmt(auction.getCurrentPrice()));
 
         AutoBidManager.getInstance().setUICallback(auctionId, this::handleManagerEvent);
@@ -107,8 +104,8 @@ public class AutoBidController {
 
         // Kiểm tra balance: maxPrice không được vượt quá balance hiện tại
         com.btl.n8.Model.Entity.User currentUser = SessionManager.getInstance().getCurrentUser();
-        java.math.BigDecimal balance = currentUser != null && currentUser.getBalance() != null
-                ? currentUser.getBalance() : java.math.BigDecimal.ZERO;
+        BigDecimal balance = currentUser != null && currentUser.getBalance() != null
+                ? currentUser.getBalance() : BigDecimal.ZERO;
         if (maxPrice.compareTo(balance) > 0) {
             showMsg(String.format("Số dư không đủ!\nBalance: %s\nMax Price: %s",
                     fmt(balance), fmt(maxPrice)), false);
