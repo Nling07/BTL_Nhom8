@@ -59,7 +59,6 @@ public class SellController implements ServerResponseListener {
     private Button submitBtn;
     private final ObservableList<SellRow> myItems = FXCollections.observableArrayList();
 
-    // FIX: thêm ItemTypeAdapter để deserialize List<Item> trong GetSellerItemsResponse
     private static final Gson gson = new GsonBuilder()
             .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
             .registerTypeAdapter(Item.class, new ItemTypeAdapter())
@@ -92,13 +91,13 @@ public class SellController implements ServerResponseListener {
         typeCombo.setItems(FXCollections.observableArrayList("POSTER", "FIGURE", "CARD"));
 
         hoursSpinner.setValueFactory(
-                new SpinnerValueFactory.IntegerSpinnerValueFactory(0, 48, 1));
+                new SpinnerValueFactory.IntegerSpinnerValueFactory(0, 48, 0));
         hoursSpinner.setEditable(true);
 
+        // Cho phép chọn từ 1 phút trở lên (bỏ giới hạn chỉ 0 và 30 phút)
         minutesSpinner.setValueFactory(
-                new SpinnerValueFactory.ListSpinnerValueFactory<>(
-                        FXCollections.observableArrayList(0, 30)));
-        minutesSpinner.setEditable(false);
+                new SpinnerValueFactory.IntegerSpinnerValueFactory(0, 59, 1));
+        minutesSpinner.setEditable(true);
 
         colId          .setCellValueFactory(new PropertyValueFactory<>("id"));
         colName        .setCellValueFactory(new PropertyValueFactory<>("name"));
@@ -109,8 +108,6 @@ public class SellController implements ServerResponseListener {
         myItemTable.setItems(myItems);
 
         ClientSocket.getInstance().addListener(this);
-
-        // FIX: load danh sách sản phẩm của seller ngay khi mở màn hình
         loadMyItems(user.getId());
     }
 
@@ -130,7 +127,6 @@ public class SellController implements ServerResponseListener {
 
         switch (json.get("action").getAsString()) {
 
-            // FIX: thêm case xử lý danh sách sản phẩm trả về từ server
             case "SELLER_ITEMS_RESULT" -> {
                 GetSellerItemsResponse res = gson.fromJson(json, GetSellerItemsResponse.class);
                 Platform.runLater(() -> {
@@ -164,7 +160,6 @@ public class SellController implements ServerResponseListener {
                         uploadLabel.setText("");
                         selectedImage = null;
                         showSuccess("Đăng bán thành công!");
-                        // FIX: reload lại bảng sau khi đăng bán thành công
                         User user = SessionManager.getInstance().getCurrentUser();
                         if (user != null) loadMyItems(user.getId());
                     } else {
@@ -215,12 +210,14 @@ public class SellController implements ServerResponseListener {
         }
 
         hoursSpinner.commitValue();
+        minutesSpinner.commitValue();
         int hours        = hoursSpinner.getValue();
         int minutes      = minutesSpinner.getValue();
         int totalMinutes = hours * 60 + minutes;
 
-        if (totalMinutes < 30)      { showError("Thời gian tối thiểu là 30 phút"); return; }
-        if (totalMinutes > 48 * 60) { showError("Thời gian tối đa là 48 giờ");     return; }
+        // Cho phép tối thiểu 1 phút (bỏ giới hạn 30 phút cũ)
+        if (totalMinutes < 1)       { showError("Thời gian tối thiểu là 1 phút"); return; }
+        if (totalMinutes > 48 * 60) { showError("Thời gian tối đa là 48 giờ");    return; }
 
         submitBtn = (Button) event.getSource();
         submitBtn.setDisable(true);

@@ -120,6 +120,10 @@ public class BidController implements ServerResponseListener {
                 // Reload danh sách khi có phiên kết thúc
                 Platform.runLater(this::loadData);
             }
+            case "NEW_AUCTION_AVAILABLE" -> {
+                // Có seller vừa đăng item mới → reload danh sách để hiện auction mới
+                Platform.runLater(this::loadData);
+            }
         }
     }
 

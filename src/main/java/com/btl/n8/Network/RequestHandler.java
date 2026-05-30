@@ -340,6 +340,15 @@ public class RequestHandler {
                     auctionOk ? "Đăng bán thành công" : "Tạo đấu giá thất bại",
                     req.getSessionId(), auctionOk,
                     auction.getId(), item.getId(), req.getEndTime()));
+
+            // Broadcast tới tất cả clients để reload danh sách auction mới
+            if (auctionOk) {
+                com.google.gson.JsonObject notify = new com.google.gson.JsonObject();
+                notify.addProperty("action", "NEW_AUCTION_AVAILABLE");
+                notify.addProperty("auctionId", auction.getId());
+                notify.addProperty("itemName", req.getName());
+                broadcastAll(gson.toJson(notify));
+            }
         } catch (AuthenticationException e) {
             send(new AddItemResponse(e.getMessage(), null, false, -1, -1, null));
         }
